@@ -9,6 +9,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: termux-repository
+  cancel-in-progress: true
+
 jobs:
   package:
     runs-on: ubuntu-latest
@@ -23,6 +27,13 @@ jobs:
           python3 -m pip install --disable-pip-version-check --no-deps .
           python3 -m hook.cli --version
           python3 -m hook.cli -c 'print("Termux package smoke test")'
+
+      - name: Install packaging tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends dpkg-dev
 
       - name: Build Termux .deb and APT repository
         shell: bash
@@ -42,26 +53,31 @@ jobs:
 
           PKG="hook_${VERSION}_all.deb"
           ROOT="$PWD/pkgroot"
+          TERMUX_PREFIX="/data/data/com.termux/files/usr"
           rm -rf "$ROOT" repo "$PKG"
 
+          # Termux's dpkg installs packages into the Android app prefix.
+          # Do NOT use /usr here: that is the Android filesystem root and is read-only.
           mkdir -p \
             "$ROOT/DEBIAN" \
-            "$ROOT/usr/opt/hook" \
-            "$ROOT/usr/bin" \
-            "$ROOT/usr/share/doc/hook"
+            "$ROOT$TERMUX_PREFIX/opt/hook" \
+            "$ROOT$TERMUX_PREFIX/bin" \
+            "$ROOT$TERMUX_PREFIX/share/doc/hook"
 
-          cp -a src/hook/. "$ROOT/usr/opt/hook/"
+          cp -a src/hook/. "$ROOT$TERMUX_PREFIX/opt/hook/"
 
-          cat > "$ROOT/usr/bin/hook" <<'SH'
+          cat > "$ROOT$TERMUX_PREFIX/bin/hook" <<'SH'
           #!/data/data/com.termux/files/usr/bin/sh
           set -e
           PREFIX="${PREFIX:-/data/data/com.termux/files/usr}"
           export PYTHONPATH="$PREFIX/opt/hook${PYTHONPATH:+:$PYTHONPATH}"
           exec python -m hook.cli "$@"
           SH
-          chmod 755 "$ROOT/usr/bin/hook"
+          chmod 755 "$ROOT$TERMUX_PREFIX/bin/hook"
 
-          cp LICENSE "$ROOT/usr/share/doc/hook/LICENSE" 2>/dev/null || true
+          if [ -f LICENSE ]; then
+            cp LICENSE "$ROOT$TERMUX_PREFIX/share/doc/hook/LICENSE"
+          fi
 
           cat > "$ROOT/DEBIAN/control" <<EOF
           Package: hook
@@ -78,9 +94,20 @@ jobs:
 
           dpkg-deb --build --root-owner-group "$ROOT" "$PKG"
 
-          dpkg-deb --contents "$PKG" | grep -F 'usr/bin/hook'
-          dpkg-deb --contents "$PKG" | grep -F 'usr/opt/hook/'
+          echo "Package contents:"
+          dpkg-deb --contents "$PKG"
+
+          # Hard fail if the package contains paths that would target the host /usr.
+          if dpkg-deb --contents "$PKG" | grep -Eq '^[-dlcbprwx]+[[:space:]]+[0-9]+[[:space:]]+[0-9]+/[0-9]+[[:space:]]+.*[[:space:]]\./usr(/|$)'; then
+            echo "ERROR: package contains a host-root ./usr path" >&2
+            exit 1
+          fi
+
+          dpkg-deb --contents "$PKG" | grep -F "./data/data/com.termux/files/usr/bin/hook"
+          dpkg-deb --contents "$PKG" | grep -F "./data/data/com.termux/files/usr/opt/hook/"
           dpkg-deb --info "$PKG" | grep -F 'Package: hook'
+          dpkg-deb --info "$PKG" | grep -F 'Architecture: all'
+          dpkg-deb --info "$PKG" | grep -F 'Depends: python'
 
           mkdir -p repo/pool/main/h/hook repo/dists/stable/main/binary-all
           cp "$PKG" repo/pool/main/h/hook/
@@ -120,16 +147,48 @@ jobs:
           </body></html>
           EOF
 
-      - name: Verify APT metadata paths
+      - name: Verify APT repository and package paths
         shell: bash
         run: |
           set -euo pipefail
-          test -f "repo/pool/main/h/hook/hook_${HOOK_VERSION}_all.deb"
-          grep -F "pool/main/h/hook/hook_${HOOK_VERSION}_all.deb" repo/dists/stable/main/binary-all/Packages
-          if grep -Fq "repo/pool/" repo/dists/stable/main/binary-all/Packages; then
+
+          DEB="repo/pool/main/h/hook/hook_${HOOK_VERSION}_all.deb"
+          PACKAGES="repo/dists/stable/main/binary-all/Packages"
+
+          test -f "$DEB"
+          test -s "$PACKAGES"
+          test -s "${PACKAGES}.gz"
+
+          grep -F "Filename: pool/main/h/hook/hook_${HOOK_VERSION}_all.deb" "$PACKAGES"
+
+          if grep -Fq "repo/pool/" "$PACKAGES"; then
             echo "ERROR: Packages contains an incorrect repo/ prefix" >&2
             exit 1
           fi
+
+          if grep -Eq 'Filename: /|Filename: \./' "$PACKAGES"; then
+            echo "ERROR: Packages contains an absolute or ./ Filename" >&2
+            exit 1
+          fi
+
+          # Validate that the exact archive referenced by Packages is readable.
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          packages = Path("repo/dists/stable/main/binary-all/Packages").read_text(encoding="utf-8")
+          match = re.search(r"^Filename: (.+)$", packages, re.M)
+          if not match:
+              raise SystemExit("Packages has no Filename entry")
+          archive = Path("repo") / match.group(1)
+          if not archive.is_file():
+              raise SystemExit(f"APT Filename does not resolve to a file: {archive}")
+          print(f"Verified APT archive: {archive}")
+          PY
+
+          # Ensure Release hashes exactly match the generated metadata.
+          grep -F "$(sha256sum "$PACKAGES" | cut -d' ' -f1)" repo/dists/stable/Release
+          grep -F "$(sha256sum "${PACKAGES}.gz" | cut -d' ' -f1)" repo/dists/stable/Release
 
       - name: Publish APT repository to GitHub Pages
         uses: peaceiris/actions-gh-pages@v4
