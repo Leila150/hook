@@ -1,0 +1,16 @@
+Package: hook
+Version: 1.1.2
+Architecture: all
+Maintainer: Leila150
+Depends: python
+Filename: pool/main/h/hook/hook_1.1.2_all.deb
+Size: 226058
+MD5sum: 41793da6342e36e58192c6b6634c1343
+SHA1: 561964952efd1da680af3f821ce1a69ca044deaf
+SHA256: 8589b9047b96b886aeaf373562c52cf93486b6829df673be853ba3285c922b81
+Section: devel
+Priority: optional
+Homepage: https://github.com/Leila150/hook
+Description: HOOK programming language
+ Easy, powerful, extensible and universal programming language.
+

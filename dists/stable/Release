@@ -1,0 +1,13 @@
+Origin: HOOK
+Label: HOOK
+Suite: stable
+Codename: stable
+Architectures: all aarch64
+Components: main
+Date: Fri, 04 Sep 2026 14:28:50 +0000
+Description: HOOK Termux packages
+SHA256:
+ 3ee86c9a36253d749e75d3242459384ec74e2de65ba6c3547e796ddbb8635099 485 main/binary-all/Packages
+ dfa9b2c6f6897761c667e3d23d17d1a2782c33d09b8dedd23246810f64c6a156 364 main/binary-all/Packages.gz
+ 3ee86c9a36253d749e75d3242459384ec74e2de65ba6c3547e796ddbb8635099 485 main/binary-aarch64/Packages
+ dfa9b2c6f6897761c667e3d23d17d1a2782c33d09b8dedd23246810f64c6a156 364 main/binary-aarch64/Packages.gz
