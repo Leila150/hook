@@ -2,6 +2,7 @@ name: Build and publish Termux repository
 
 on:
   push:
+    branches: ["main"]
     tags: ["v*"]
   workflow_dispatch:
 
@@ -84,8 +85,6 @@ jobs:
           mkdir -p repo/pool/main/h/hook repo/dists/stable/main/binary-all
           cp "$PKG" repo/pool/main/h/hook/
 
-          # Generate APT metadata from inside the repository root so that
-          # Packages contains paths relative to the repository URL.
           (
             cd repo
             dpkg-scanpackages pool/main /dev/null > dists/stable/main/binary-all/Packages
