@@ -1,8 +1,9 @@
-"""HOOK package manager with local discovery, semver constraints, locking and loading."""
+"""HOOK package manager with deterministic semver resolution and locking."""
 from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 import json, re, shutil
+
 
 @dataclass(frozen=True, order=True)
 class Version:
@@ -15,52 +16,72 @@ class Version:
     def __str__(self): return f"{self.major}.{self.minor}.{self.patch}"
 
 
-def satisfies(version, constraint="*"):
+def satisfies(version,constraint="*"):
     v=Version.parse(version); c=str(constraint or "*").strip()
     if c in {"","*","latest"}: return True
+    # Support simple space/comma-separated conjunctions.
+    parts=[p for p in re.split(r"\s*,\s*|\s+(?=(?:[<>=~^]))",c) if p]
+    if len(parts)>1: return all(satisfies(v,p) for p in parts)
     if c.startswith("^"):
-        base=Version.parse(c[1:]); upper=Version(base.major+1,0,0) if base.major else Version(0,base.minor+1,0); return v>=base and v<upper
+        base=Version.parse(c[1:]); upper=Version(base.major+1,0,0) if base.major else Version(0,base.minor+1,0)
+        return v>=base and v<upper
     if c.startswith("~"):
         base=Version.parse(c[1:]); return v>=base and v<Version(base.major,base.minor+1,0)
     m=re.match(r"(>=|<=|>|<|==|=)?\s*(.+)$",c)
+    if not m: raise ValueError(f"invalid constraint: {constraint}")
     op=m.group(1) or "=="; x=Version.parse(m.group(2))
     return {">=":v>=x,"<=":v<=x,">":v>x,"<":v<x,"==":v==x,"=":v==x}[op]
+
 
 @dataclass
 class Package:
     name:str; version:str; path:str=""; dependencies:dict[str,str]=field(default_factory=dict)
     def manifest(self): return {"name":self.name,"version":self.version,"dependencies":self.dependencies}
 
+
 class PackageManager:
     def __init__(self,root="."):
         self.root=Path(root).resolve(); self.hookdir=self.root/".hook"; self.cache=self.hookdir/"packages"; self.lockfile=self.root/"hook.lock"
     def create(self,name,version="0.1.0",dependencies=None):
-        path=self.root/name; path.mkdir(parents=True,exist_ok=True); (path/"hook.package.json").write_text(json.dumps(Package(name,version,dependencies=dependencies or {}).manifest(),indent=2)+"\n",encoding="utf-8"); return path
+        path=self.root/name; path.mkdir(parents=True,exist_ok=True)
+        (path/"hook.package.json").write_text(json.dumps(Package(name,version,dependencies=dependencies or {}).manifest(),indent=2)+"\n",encoding="utf-8"); return path
     def read(self,path=None):
         p=Path(path or self.root); p=p if p.name=="hook.package.json" else p/"hook.package.json"
         if not p.exists(): raise FileNotFoundError(p)
         return json.loads(p.read_text(encoding="utf-8"))
     def discover(self,*roots):
-        found={}
-        search=[Path(r).resolve() for r in roots] or [self.root,self.cache]
+        found={}; search=[Path(r).resolve() for r in roots] or [self.root,self.cache]
         for root in search:
             if not root.exists(): continue
             for manifest in root.rglob("hook.package.json"):
                 try:
-                    data=json.loads(manifest.read_text(encoding="utf-8")); name=data["name"]; found.setdefault(name,[]).append(Package(name,data.get("version","0.0.0"),str(manifest.parent),data.get("dependencies",{})))
+                    data=json.loads(manifest.read_text(encoding="utf-8")); name=data["name"]
+                    found.setdefault(name,[]).append(Package(name,data.get("version","0.0.0"),str(manifest.parent),data.get("dependencies",{})))
                 except (OSError,ValueError,KeyError): continue
         for values in found.values(): values.sort(key=lambda p:Version.parse(p.version),reverse=True)
         return found
     def resolve(self,requirements,roots=()):
-        available=self.discover(*roots); selected={}; pending=dict(requirements)
-        while pending:
-            name,constraint=pending.popitem()
-            candidates=[p for p in available.get(name,[]) if satisfies(p.version,constraint)]
-            if not candidates: raise RuntimeError(f"no package version satisfies {name} {constraint}")
-            chosen=candidates[0]
-            if name in selected and selected[name].version!=chosen.version: raise RuntimeError(f"dependency conflict for {name}")
-            if name in selected: continue
-            selected[name]=chosen; pending.update(chosen.dependencies)
+        available=self.discover(*roots); constraints={name:[str(c)] for name,c in requirements.items()}; selected={}
+        def solve(pending):
+            if not pending:return True
+            name=pending[0]
+            candidates=[p for p in available.get(name,[]) if all(satisfies(p.version,c) for c in constraints.get(name,["*"]))]
+            if not candidates: return False
+            for chosen in candidates:
+                previous=selected.get(name)
+                if previous and previous.version!=chosen.version: continue
+                selected[name]=chosen; added=[]; failed=False
+                for dep,con in chosen.dependencies.items():
+                    constraints.setdefault(dep,[]).append(str(con)); added.append(dep)
+                    if dep not in pending: pending.append(dep)
+                if solve(pending[1:]): return True
+                for dep in added:
+                    constraints[dep].pop()
+                    if not constraints[dep]: del constraints[dep]
+                if previous is None: selected.pop(name,None)
+            return False
+        pending=list(requirements)
+        if not solve(pending): raise RuntimeError("unsatisfied package dependency constraints")
         return selected
     def lock(self,packages):
         data={"version":2,"packages":{p.name:{"version":p.version,"path":p.path,"dependencies":p.dependencies} for p in packages}}
@@ -87,13 +108,13 @@ class PackageManager:
             if target.exists(): shutil.rmtree(target)
             if base.exists() and not any(base.iterdir()): base.rmdir()
         else: shutil.rmtree(base)
-        lock=self.load_lock(); lock.get("packages",{}).pop(name,None); self.lockfile.write_text(json.dumps(lock,indent=2)+"\n",encoding="utf-8")
-        return True
+        lock=self.load_lock(); lock.get("packages",{}).pop(name,None); self.lockfile.write_text(json.dumps(lock,indent=2)+"\n",encoding="utf-8"); return True
     def list_installed(self):
         out=[]
         for p in self.cache.glob("*/**/hook.package.json") if self.cache.exists() else []:
             try: out.append(self.read(p.parent))
             except Exception: pass
         return out
+
 
 __all__=["Package","Version","PackageManager","satisfies"]
