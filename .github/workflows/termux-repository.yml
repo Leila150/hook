@@ -92,11 +92,26 @@ jobs:
       - name: Build Termux package and APT repository
         shell: bash
         env:
-          HOOK_APT_GPG_PRIVATE_KEY: ${{ secrets.HOOK_APT_GPG_PRIVATE_KEY }}
+          HOOK_APT_GPG_PASSPHRASE: ${{ secrets.HOOK_APT_GPG_PASSPHRASE }}
         run: |
           set -euo pipefail
           export PYTHONPATH="$PWD/src"
           export GNUPGHOME="$RUNNER_TEMP/hook-gnupg"
+
+          if [ -z "${HOOK_APT_GPG_PASSPHRASE:-}" ]; then
+            echo "ERROR: GitHub secret HOOK_APT_GPG_PASSPHRASE is not configured." >&2
+            echo "Add the passphrase used to protect the HOOK APT signing key." >&2
+            exit 1
+          fi
+
+          # GnuPG 2.x requires loopback pinentry for non-interactive passphrase use.
+          # Keep the passphrase in a short-lived, permission-restricted file rather
+          # than putting it on the gpg command line where it could appear in process data.
+          PASSPHRASE_FILE="$RUNNER_TEMP/hook-apt-gpg-passphrase"
+          umask 077
+          printf '%s\n' "$HOOK_APT_GPG_PASSPHRASE" > "$PASSPHRASE_FILE"
+          trap 'rm -f "$PASSPHRASE_FILE"' EXIT
+
           VERSION="$HOOK_VERSION"
           PKG="hook_${VERSION}_all.deb"
           ROOT="$PWD/pkgroot"
@@ -174,9 +189,11 @@ jobs:
 
           # APT supports both an inline signed InRelease and a detached Release.gpg.
           # Keep both so older and newer APT clients can authenticate the archive.
-          gpg --batch --local-user "$HOOK_APT_GPG_FINGERPRINT" --clearsign \
+          gpg --batch --pinentry-mode loopback --passphrase-file "$PASSPHRASE_FILE" \
+            --local-user "$HOOK_APT_GPG_FINGERPRINT" --clearsign \
             --output repo/dists/stable/InRelease repo/dists/stable/Release
-          gpg --batch --local-user "$HOOK_APT_GPG_FINGERPRINT" --armor --detach-sign \
+          gpg --batch --pinentry-mode loopback --passphrase-file "$PASSPHRASE_FILE" \
+            --local-user "$HOOK_APT_GPG_FINGERPRINT" --armor --detach-sign \
             --output repo/dists/stable/Release.gpg repo/dists/stable/Release
 
           # Publish the public half of the repository signing key.
