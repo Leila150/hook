@@ -28,11 +28,11 @@ jobs:
           python3 -m hook.cli -c 'print("Termux package smoke test")'
           python3 -m compileall -q src/hook
 
-      - name: Install packaging tools
+      - name: Install packaging and signing tools
         run: |
           set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends dpkg-dev
+          sudo apt-get install -y --no-install-recommends dpkg-dev gnupg
 
       - name: Check package version is newer than published version
         shell: bash
@@ -64,11 +64,39 @@ jobs:
 
           echo "Version check passed: $VERSION > $PUBLISHED_VERSION"
 
+      - name: Import APT signing key
+        shell: bash
+        env:
+          HOOK_APT_GPG_PRIVATE_KEY: ${{ secrets.HOOK_APT_GPG_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${HOOK_APT_GPG_PRIVATE_KEY:-}" ]; then
+            echo "ERROR: GitHub secret HOOK_APT_GPG_PRIVATE_KEY is not configured." >&2
+            echo "Create a long-lived repository signing key and add its ASCII-armored private key as this secret." >&2
+            exit 1
+          fi
+
+          export GNUPGHOME="$RUNNER_TEMP/hook-gnupg"
+          mkdir -m 700 -p "$GNUPGHOME"
+          printf '%s\n' "$HOOK_APT_GPG_PRIVATE_KEY" | gpg --batch --import
+
+          KEY_FINGERPRINT="$(gpg --batch --with-colons --list-secret-keys | awk -F: '$1 == "fpr" {print $10; exit}')"
+          if [ -z "$KEY_FINGERPRINT" ]; then
+            echo "ERROR: Could not determine imported GPG key fingerprint." >&2
+            exit 1
+          fi
+
+          echo "HOOK_APT_GPG_FINGERPRINT=$KEY_FINGERPRINT" >> "$GITHUB_ENV"
+          echo "Using APT signing key fingerprint: $KEY_FINGERPRINT"
+
       - name: Build Termux package and APT repository
         shell: bash
+        env:
+          HOOK_APT_GPG_PRIVATE_KEY: ${{ secrets.HOOK_APT_GPG_PRIVATE_KEY }}
         run: |
           set -euo pipefail
           export PYTHONPATH="$PWD/src"
+          export GNUPGHOME="$RUNNER_TEMP/hook-gnupg"
           VERSION="$HOOK_VERSION"
           PKG="hook_${VERSION}_all.deb"
           ROOT="$PWD/pkgroot"
@@ -144,24 +172,49 @@ jobs:
            ${GZSHA_aarch64} ${GZSIZE_aarch64} main/binary-aarch64/Packages.gz
           EOF
 
+          # APT supports both an inline signed InRelease and a detached Release.gpg.
+          # Keep both so older and newer APT clients can authenticate the archive.
+          gpg --batch --local-user "$HOOK_APT_GPG_FINGERPRINT" --clearsign \
+            --output repo/dists/stable/InRelease repo/dists/stable/Release
+          gpg --batch --local-user "$HOOK_APT_GPG_FINGERPRINT" --armor --detach-sign \
+            --output repo/dists/stable/Release.gpg repo/dists/stable/Release
+
+          # Publish the public half of the repository signing key.
+          gpg --batch --armor --export "$HOOK_APT_GPG_FINGERPRINT" > repo/hook-repo-key.asc
+          chmod 644 repo/hook-repo-key.asc
+
           cat > repo/index.html <<EOF
           <!doctype html><html><head><meta charset="utf-8"><title>HOOK Termux Repository</title></head>
-          <body><h1>HOOK Termux Repository</h1><p>Install with <code>pkg install hook</code>.</p><p>Latest: <strong>${VERSION}</strong></p></body></html>
+          <body><h1>HOOK Termux Repository</h1><p>Install with <code>pkg install hook</code>.</p><p>Latest: <strong>${VERSION}</strong></p><p>APT signing key fingerprint: <code>${HOOK_APT_GPG_FINGERPRINT}</code></p></body></html>
           EOF
 
-      - name: Verify repository metadata
+      - name: Verify repository metadata and signatures
         shell: bash
         run: |
           set -euo pipefail
+          export GNUPGHOME="$RUNNER_TEMP/hook-gnupg"
           DEB="repo/pool/main/h/hook/hook_${HOOK_VERSION}_all.deb"
           test -f "$DEB"
+          test -s repo/dists/stable/Release
+          test -s repo/dists/stable/InRelease
+          test -s repo/dists/stable/Release.gpg
+          test -s repo/hook-repo-key.asc
+
           for p in repo/dists/stable/main/binary-all/Packages repo/dists/stable/main/binary-aarch64/Packages; do
             test -s "$p"
             grep -F "Filename: pool/main/h/hook/hook_${HOOK_VERSION}_all.deb" "$p"
             ! grep -Eq 'Filename: /|Filename: \./|repo/pool/' "$p"
           done
+
           grep -F "$(sha256sum repo/dists/stable/main/binary-all/Packages | cut -d' ' -f1)" repo/dists/stable/Release
           grep -F "$(sha256sum repo/dists/stable/main/binary-aarch64/Packages | cut -d' ' -f1)" repo/dists/stable/Release
+
+          gpg --batch --verify repo/dists/stable/Release.gpg repo/dists/stable/Release
+          gpg --batch --verify repo/dists/stable/InRelease
+
+          EXPORTED_FINGERPRINT="$(gpg --batch --with-colons --import-options show-only --import repo/hook-repo-key.asc 2>/dev/null | awk -F: '$1 == "fpr" {print $10; exit}')"
+          test "$EXPORTED_FINGERPRINT" = "$HOOK_APT_GPG_FINGERPRINT"
+          echo "APT repository signatures verified with $HOOK_APT_GPG_FINGERPRINT"
 
       - name: Publish APT repository to GitHub Pages
         uses: peaceiris/actions-gh-pages@v4
