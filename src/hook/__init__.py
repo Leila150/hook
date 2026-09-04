@@ -23,6 +23,7 @@ from .ai_training import Parameter, Optimizer, SGD, Adam, mse, binary_cross_entr
 from .toolchain import TARGETS, Project, AndroidToolchain, Codegen
 from .dialects import Dialect, DialectEngine, SyntaxExtension, ExtensionPipeline
 from .completion import Position, Diagnostics, SourceAnalyzer, ExpressionVM, Value, TaskScheduler, AsyncChannel, ModuleSpec, ModuleResolver, NativeTarget, TargetResolver, Serializer, CompilationResult, CompletePipeline
+from .full_runtime import (TensorValue, ParameterValue, LinearLayer, ReLULayer, SoftmaxLayer, NeuralModel, SGDOptimizer, AdamOptimizer, mse_loss, cross_entropy, NativeToolchain, find_native_compiler, compile_c, load_library, CFFI, AndroidProject, GUIRuntime, GameEntity, GameRuntime, Database, TCPServer, format_hook, lint_hook, Profiler as FullProfiler, Debugger, LSPServer, ProjectManifest, PackageInstaller, SourceSpan, exception_report)
 from .v1_runtime import VERSION, LANGUAGE, Module, FeatureRegistry, install_v1_runtime
 from .v1_fixes import install_v1_fixes
 
@@ -35,19 +36,10 @@ install_v1_fixes(Engine)
 
 __version__ = VERSION
 __all__ = [
-    "run", "execute", "compile_source", "Lexer", "Parser", "Engine", "Compiler", "VM", "Program", "Instruction",
-    "HookError", "__version__", "VERSION", "LANGUAGE", "Module", "FeatureRegistry",
-    "ExtensionBase", "Type", "Error", "Statement", "Loop", "Operator", "Language", "Processor",
-    "ExtensionDefinition", "ExtensionRegistry", "ExtensionConflict", "CATEGORIES", "ASTNode", "ASTParser",
-    "SemanticAnalyzer", "SemanticError", "BytecodeCompiler", "BytecodeProgram", "LanguagePipeline", "HKD", "HKDError",
-    "PersistentScope", "PersistentScopes", "Formatter", "Linter", "Diagnostic", "Profiler", "TestRunner",
-    "Package", "PackageManager", "NativeLibrary", "CInterop", "CppInterop", "RustInterop", "ABI", "Tensor", "tensor",
-    "softmax", "argmax", "relu", "sigmoid", "linear", "Sequential", "ModelRegistry", "SourcePosition", "TraceFrame",
-    "TracebackBuilder", "SourceMap", "DiagnosticEngine", "CancellationToken", "Channel", "TaskGroup", "Scheduler",
-    "Mutex", "Atom", "Pointer", "MemoryManager", "Unsafe", "Ownership", "Binding", "NativeBindings", "Op", "Bytecode",
-    "CoreVM", "Request", "Response", "Router", "WebApp", "Color", "Vec2", "Entity", "Scene", "Game", "GUI", "Audio",
-    "Parameter", "Optimizer", "SGD", "Adam", "mse", "binary_cross_entropy", "Dataset", "TARGETS", "Project",
-    "AndroidToolchain", "Codegen", "Dialect", "DialectEngine", "SyntaxExtension", "ExtensionPipeline",
+    "run", "execute", "compile_source", "Lexer", "Parser", "Engine", "Compiler", "VM", "Program", "Instruction", "HookError", "__version__", "VERSION", "LANGUAGE", "Module", "FeatureRegistry",
+    "ExtensionBase", "Type", "Error", "Statement", "Loop", "Operator", "Language", "Processor", "ExtensionDefinition", "ExtensionRegistry", "ExtensionConflict", "CATEGORIES",
+    "ASTNode", "ASTParser", "SemanticAnalyzer", "SemanticError", "BytecodeCompiler", "BytecodeProgram", "LanguagePipeline", "HKD", "HKDError", "PersistentScope", "PersistentScopes", "Formatter", "Linter", "Diagnostic", "Profiler", "TestRunner", "Package", "PackageManager", "NativeLibrary", "CInterop", "CppInterop", "RustInterop", "ABI",
+    "Tensor", "tensor", "softmax", "argmax", "relu", "sigmoid", "linear", "Sequential", "ModelRegistry", "SourcePosition", "TraceFrame", "TracebackBuilder", "SourceMap", "DiagnosticEngine", "CancellationToken", "Channel", "TaskGroup", "Scheduler", "Mutex", "Atom", "Pointer", "MemoryManager", "Unsafe", "Ownership", "Binding", "NativeBindings", "Op", "Bytecode", "CoreVM", "Request", "Response", "Router", "WebApp", "Color", "Vec2", "Entity", "Scene", "Game", "GUI", "Audio", "Parameter", "Optimizer", "SGD", "Adam", "mse", "binary_cross_entropy", "Dataset", "TARGETS", "Project", "AndroidToolchain", "Codegen", "Dialect", "DialectEngine", "SyntaxExtension", "ExtensionPipeline",
     "Position", "Diagnostics", "SourceAnalyzer", "ExpressionVM", "Value", "TaskScheduler", "AsyncChannel", "ModuleSpec", "ModuleResolver", "NativeTarget", "TargetResolver", "Serializer", "CompilationResult", "CompletePipeline",
-    "install_v1_runtime", "install_v1_fixes",
+    "TensorValue", "ParameterValue", "LinearLayer", "ReLULayer", "SoftmaxLayer", "NeuralModel", "SGDOptimizer", "AdamOptimizer", "mse_loss", "cross_entropy", "NativeToolchain", "find_native_compiler", "compile_c", "load_library", "CFFI", "AndroidProject", "GUIRuntime", "GameEntity", "GameRuntime", "Database", "TCPServer", "format_hook", "lint_hook", "FullProfiler", "Debugger", "LSPServer", "ProjectManifest", "PackageInstaller", "SourceSpan", "exception_report", "install_v1_runtime", "install_v1_fixes",
 ]
