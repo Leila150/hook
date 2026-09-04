@@ -1,0 +1,9 @@
+import web
+
+api GET "/hello" do
+    return {"message": "Hello from HOOK 1.0"}
+
+api GET "/users/{id: num}" do
+    return {"user_id": id}
+
+serve "127.0.0.1" 8000
