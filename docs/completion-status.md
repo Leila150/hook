@@ -14,7 +14,6 @@ This document tracks implemented runtime work. A feature is marked implemented o
 - Native target discovery and canonical target triples for Linux, Windows, macOS and Android ARM targets.
 - Versioned atomic serializer for persistent data values.
 - Unified `CompletePipeline` facade and public exports.
-- Package manager semantic-version constraints, discovery, local installation, locking and uninstall support.
 - VM jump regression coverage and completion subsystem regression coverage.
 
 ## Backend boundary
