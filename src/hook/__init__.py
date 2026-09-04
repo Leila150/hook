@@ -23,12 +23,14 @@ from .ai_training import Parameter, Optimizer, SGD, Adam, mse, binary_cross_entr
 from .toolchain import TARGETS, Project, AndroidToolchain, Codegen
 from .dialects import Dialect, DialectEngine, SyntaxExtension, ExtensionPipeline
 from .v1_runtime import VERSION, LANGUAGE, Module, FeatureRegistry, install_v1_runtime
+from .v1_fixes import install_v1_fixes
 
 install_engine_extensions(Engine)
 install_extension_system(Engine)
 install_universal_runtime(Engine)
 install_extension_runtime(Engine)
 install_v1_runtime(Engine)
+install_v1_fixes(Engine)
 
 __version__ = VERSION
 __all__ = [
@@ -45,4 +47,5 @@ __all__ = [
     "CoreVM", "Request", "Response", "Router", "WebApp", "Color", "Vec2", "Entity", "Scene", "Game", "GUI", "Audio",
     "Parameter", "Optimizer", "SGD", "Adam", "mse", "binary_cross_entropy", "Dataset", "TARGETS", "Project",
     "AndroidToolchain", "Codegen", "Dialect", "DialectEngine", "SyntaxExtension", "ExtensionPipeline", "install_v1_runtime",
+    "install_v1_fixes",
 ]
