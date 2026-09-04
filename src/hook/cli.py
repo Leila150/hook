@@ -6,7 +6,7 @@ import subprocess
 import sys
 
 from .cli_ui import banner, error, info
-from .engine import Engine
+from .engine import Engine, hook_print
 from .runtime_extensions import install_engine_extensions
 from .errors import HookError
 from .compat import WinlatorRuntime, CompatibilityError, detect_components, host_arch, is_android
@@ -116,7 +116,16 @@ def repl():
         if c == ":features": print("\n".join(e.features.names())); continue
         if c == ":clear": print("\033[2J\033[H", end=""); continue
         if not s.strip(): continue
-        try: e.run(s)
+        try:
+            # Expressions are evaluated directly so their resulting value is
+            # visible in the REPL, while statements continue through Engine.
+            try:
+                result = e.expr(s, e.root)
+            except Exception:
+                e.run(s)
+            else:
+                if result is not None:
+                    hook_print(result)
         except HookError as exc: error(str(exc))
         except Exception as exc: error(f"SystemError: {exc}")
 
@@ -126,6 +135,7 @@ def build_parser():
     p.add_argument("target", nargs="?", help="command or .hk source file")
     p.add_argument("args", nargs="*", help="command arguments")
     p.add_argument("-c", "--code", metavar="CODE", help="execute HOOK source")
+    p.add_argument("--write", action="store_true", help="write formatted output back to the source file (fmt)")
     p.add_argument("--version", action="version", version=f"HOOK {VERSION}")
     return p
 
@@ -145,7 +155,7 @@ def main(argv=None):
     if cmd == "repl": return repl()
     if cmd == "run": return _run_file(args[0]) if args else 2
     if cmd == "check": return _check_file(args[0]) if args else 2
-    if cmd == "fmt": return _format_file(args[0], "--write" in args) if args else 2
+    if cmd == "fmt": return _format_file(args[0], ns.write) if args else 2
     if cmd == "new": return _new_project(args[0]) if args else 2
     if cmd == "test": return _test(args[0] if args else "tests")
     if cmd == "build":
