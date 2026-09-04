@@ -34,13 +34,42 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends dpkg-dev
 
-      - name: Build Termux package and APT repository
+      - name: Check package version is newer than published version
         shell: bash
         run: |
           set -euo pipefail
           export PYTHONPATH="$PWD/src"
           VERSION="$(python3 -c 'from hook.cli import VERSION; print(VERSION)')"
           echo "HOOK_VERSION=$VERSION" >> "$GITHUB_ENV"
+
+          PUBLISHED_VERSION=""
+          if git ls-remote --exit-code --heads origin gh-pages >/dev/null 2>&1; then
+            git fetch --no-tags --depth=1 origin gh-pages:refs/remotes/origin/gh-pages
+            PUBLISHED_VERSION="$(git show origin/gh-pages:dists/stable/main/binary-all/Packages 2>/dev/null | awk '$1 == "Version:" {print $2; exit}')"
+          fi
+
+          if [ -z "$PUBLISHED_VERSION" ]; then
+            echo "No previously published HOOK package found; allowing initial publication of $VERSION."
+            exit 0
+          fi
+
+          echo "Current source version:   $VERSION"
+          echo "Published repository:     $PUBLISHED_VERSION"
+
+          if dpkg --compare-versions "$VERSION" le "$PUBLISHED_VERSION"; then
+            echo "ERROR: HOOK package version $VERSION must be greater than the currently published version $PUBLISHED_VERSION." >&2
+            echo "Bump VERSION in src/hook/cli.py before publishing." >&2
+            exit 1
+          fi
+
+          echo "Version check passed: $VERSION > $PUBLISHED_VERSION"
+
+      - name: Build Termux package and APT repository
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONPATH="$PWD/src"
+          VERSION="$HOOK_VERSION"
           PKG="hook_${VERSION}_all.deb"
           ROOT="$PWD/pkgroot"
           PREFIX="/data/data/com.termux/files/usr"
