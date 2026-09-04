@@ -1,0 +1,7 @@
+local name = "HOOK"
+function greet(who: text) do
+    return "Hello, " + who + "!"
+
+print(greet(name))
+for i in range(1, 4) do
+    print(i)
