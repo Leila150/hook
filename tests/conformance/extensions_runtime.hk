@@ -1,0 +1,12 @@
+# HOOK extension execution conformance
+class contains(Operator):
+    function apply(left, right) do
+        return left in right
+
+class shout(Statement):
+    function execute(text, children, scope) do
+        print("CUSTOM STATEMENT")
+
+local result = "a" contains "cat"
+print(result)
+shout
