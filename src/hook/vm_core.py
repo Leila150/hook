@@ -1,30 +1,82 @@
-"""A real AST bytecode VM core used by the compiler roadmap."""
+"""Small, deterministic stack VM used by HOOK's compiler pipeline.
+
+The VM intentionally has no dependency on the interpreter. It is suitable for
+unit tests, compiler bring-up, and future native/JIT backends.
+"""
 from __future__ import annotations
 from dataclasses import dataclass
+from typing import Any, Mapping
+
+
 @dataclass(frozen=True)
 class Op:
-    code:str; arg:object=None
+    code: str
+    arg: Any = None
+
+
 class Bytecode:
-    def __init__(self,ops=()):self.ops=list(ops)
-    def emit(self,code,arg=None):self.ops.append(Op(code,arg));return len(self.ops)-1
+    def __init__(self, ops=()):
+        self.ops = list(ops)
+
+    def emit(self, code: str, arg: Any = None) -> int:
+        self.ops.append(Op(code, arg))
+        return len(self.ops) - 1
+
+    def patch(self, index: int, arg: Any) -> None:
+        self.ops[index] = Op(self.ops[index].code, arg)
+
+
 class VM:
-    def __init__(self):self.stack=[];self.globals={};self.locals={};self.ip=0
-    def run(self,program,globals_=None):
-        if globals_ is not None:self.globals=globals_
-        self.ip=0; self.stack=[]
-        while self.ip<len(program.ops):
-            op=program.ops[self.ip];self.ip+=1;c=op.code
-            if c=='CONST':self.stack.append(op.arg)
-            elif c=='LOAD':self.stack.append(self.locals.get(op.arg,self.globals[op.arg]))
-            elif c=='STORE':self.globals[op.arg]=self.stack.pop()
-            elif c=='POP':self.stack.pop()
-            elif c=='ADD':b=self.stack.pop();a=self.stack.pop();self.stack.append(a+b)
-            elif c=='SUB':b=self.stack.pop();a=self.stack.pop();self.stack.append(a-b)
-            elif c=='MUL':b=self.stack.pop();a=self.stack.pop();self.stack.append(a*b)
-            elif c=='DIV':b=self.stack.pop();a=self.stack.pop();self.stack.append(a/b)
-            elif c=='RETURN':return self.stack.pop() if self.stack else None
-            elif c=='JUMP':self.ip=int(op.arg)
-            elif c=='JUMP_IF_FALSE':
-                if not self.stack.pop():self.ip=int(op.arg)
-            else:raise RuntimeError(f'unknown bytecode operation: {c}')
+    """A compact stack VM with safe name lookup and useful core operations."""
+    def __init__(self):
+        self.stack: list[Any] = []
+        self.globals: dict[str, Any] = {}
+        self.locals: dict[str, Any] = {}
+        self.ip = 0
+
+    def _load(self, name: str) -> Any:
+        if name in self.locals:
+            return self.locals[name]
+        if name in self.globals:
+            return self.globals[name]
+        raise NameError(f"name '{name}' is not defined")
+
+    def run(self, program: Bytecode, globals_: Mapping[str, Any] | None = None):
+        if globals_ is not None:
+            self.globals = dict(globals_)
+        self.ip = 0
+        self.stack.clear()
+        while self.ip < len(program.ops):
+            op = program.ops[self.ip]
+            self.ip += 1
+            code, arg = op.code, op.arg
+            if code == 'CONST': self.stack.append(arg)
+            elif code == 'LOAD': self.stack.append(self._load(str(arg)))
+            elif code == 'STORE': self.globals[str(arg)] = self.stack.pop()
+            elif code == 'STORE_LOCAL': self.locals[str(arg)] = self.stack.pop()
+            elif code == 'POP': self.stack.pop()
+            elif code == 'ADD': self._binary(lambda a,b: a+b)
+            elif code == 'SUB': self._binary(lambda a,b: a-b)
+            elif code == 'MUL': self._binary(lambda a,b: a*b)
+            elif code == 'DIV': self._binary(lambda a,b: a/b)
+            elif code == 'MOD': self._binary(lambda a,b: a%b)
+            elif code == 'POW': self._binary(lambda a,b: a**b)
+            elif code == 'EQ': self._binary(lambda a,b: a==b)
+            elif code == 'NE': self._binary(lambda a,b: a!=b)
+            elif code == 'LT': self._binary(lambda a,b: a<b)
+            elif code == 'LE': self._binary(lambda a,b: a<=b)
+            elif code == 'GT': self._binary(lambda a,b: a>b)
+            elif code == 'GE': self._binary(lambda a,b: a>=b)
+            elif code == 'NOT': self.stack.append(not self.stack.pop())
+            elif code == 'JUMP': self.ip = int(arg)
+            elif code == 'JUMP_IF_FALSE':
+                if not self.stack.pop(): self.ip = int(arg)
+            elif code == 'JUMP_IF_TRUE':
+                if self.stack.pop(): self.ip = int(arg)
+            elif code == 'RETURN': return self.stack.pop() if self.stack else None
+            elif code == 'HALT': return self.stack.pop() if self.stack else None
+            else: raise RuntimeError(f"unknown bytecode operation: {code}")
         return self.stack[-1] if self.stack else None
+
+    def _binary(self, fn):
+        b = self.stack.pop(); a = self.stack.pop(); self.stack.append(fn(a, b))
