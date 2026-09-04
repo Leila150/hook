@@ -10,21 +10,19 @@ on:
 
 permissions:
   contents: read
-
-concurrency:
-  group: termux-repository
-  cancel-in-progress: true
+  pages: write
+  id-token: write
 
 env:
   PAGES_BASE_URL: https://leila150.github.io/hook
 
 jobs:
-  build:
+  publish:
+    name: Build, verify, and publish Termux APT repository
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      pages: write
-      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - name: Check out source
         uses: actions/checkout@v6
@@ -43,7 +41,7 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends dpkg-dev gnupg curl
+          sudo apt-get install -y --no-install-recommends dpkg-dev gnupg curl ca-certificates
 
       - name: Check package version against published repository
         shell: bash
@@ -62,16 +60,15 @@ jobs:
 
           if [ -z "$PUBLISHED_VERSION" ]; then
             echo "No previously published HOOK package found; allowing initial publication of $VERSION."
-            exit 0
+          else
+            echo "Current source version: $VERSION"
+            echo "Published repository: $PUBLISHED_VERSION"
+            if dpkg --compare-versions "$VERSION" le "$PUBLISHED_VERSION"; then
+              echo "ERROR: HOOK package version $VERSION must be greater than published version $PUBLISHED_VERSION." >&2
+              exit 1
+            fi
+            echo "Version check passed: $VERSION > $PUBLISHED_VERSION"
           fi
-
-          echo "Current source version: $VERSION"
-          echo "Published repository: $PUBLISHED_VERSION"
-          if dpkg --compare-versions "$VERSION" le "$PUBLISHED_VERSION"; then
-            echo "ERROR: HOOK package version $VERSION must be greater than published version $PUBLISHED_VERSION." >&2
-            exit 1
-          fi
-          echo "Version check passed: $VERSION > $PUBLISHED_VERSION"
 
       - name: Import APT signing key
         shell: bash
@@ -83,11 +80,9 @@ jobs:
             echo "ERROR: GitHub secret HOOK_APT_GPG_PRIVATE_KEY is not configured." >&2
             exit 1
           fi
-
           export GNUPGHOME="$RUNNER_TEMP/hook-gnupg"
           mkdir -m 700 -p "$GNUPGHOME"
           printf '%s\n' "$HOOK_APT_GPG_PRIVATE_KEY" | gpg --batch --import
-
           KEY_FINGERPRINT="$(gpg --batch --with-colons --list-secret-keys | awk -F: '$1 == "fpr" {print $10; exit}')"
           if [ -z "$KEY_FINGERPRINT" ]; then
             echo "ERROR: Could not determine imported GPG key fingerprint." >&2
@@ -103,7 +98,6 @@ jobs:
           set -euo pipefail
           export PYTHONPATH="$PWD/src"
           export GNUPGHOME="$RUNNER_TEMP/hook-gnupg"
-
           if [ -z "${HOOK_APT_GPG_PASSPHRASE:-}" ]; then
             echo "ERROR: GitHub secret HOOK_APT_GPG_PASSPHRASE is not configured." >&2
             exit 1
@@ -149,6 +143,8 @@ EOF
           chmod 644 "$ROOT/DEBIAN/control"
 
           dpkg-deb --build --root-owner-group "$ROOT" "$PKG"
+          dpkg-deb --info "$PKG" | grep -F "Version: ${VERSION}"
+          dpkg-deb --info "$PKG" | grep -F "Architecture: all"
           dpkg-deb --contents "$PKG" | grep -F "./data/data/com.termux/files/usr/bin/hook"
           dpkg-deb --contents "$PKG" | grep -F "./data/data/com.termux/files/usr/share/hook/"
           if dpkg-deb --contents "$PKG" | grep -Eq '[[:space:]]\./usr(/|$)'; then
@@ -216,22 +212,18 @@ EOF
 EOF
           chmod 644 repo/index.html
 
-      - name: Verify repository metadata, package paths, and signatures
+      - name: Verify repository before deployment
         shell: bash
         run: |
           set -euo pipefail
           export GNUPGHOME="$RUNNER_TEMP/hook-gnupg"
           DEB="repo/pool/main/h/hook/hook_${HOOK_VERSION}_all.deb"
-
           test -f "$DEB"
           test -s repo/index.html
           test -s repo/dists/stable/Release
           test -s repo/dists/stable/InRelease
           test -s repo/dists/stable/Release.gpg
           test -s repo/hook-repo-key.asc
-
-          dpkg-deb --info "$DEB" | grep -F "Version: ${HOOK_VERSION}"
-          dpkg-deb --info "$DEB" | grep -F "Architecture: all"
 
           for p in repo/dists/stable/main/binary-all/Packages repo/dists/stable/main/binary-aarch64/Packages; do
             test -s "$p"
@@ -249,10 +241,8 @@ EOF
 
           gpg --batch --verify repo/dists/stable/Release.gpg repo/dists/stable/Release
           gpg --batch --verify repo/dists/stable/InRelease
-
           EXPORTED_FINGERPRINT="$(gpg --batch --with-colons --import-options show-only --import repo/hook-repo-key.asc 2>/dev/null | awk -F: '$1 == "fpr" {print $10; exit}')"
           test "$EXPORTED_FINGERPRINT" = "$HOOK_APT_GPG_FINGERPRINT"
-          echo "APT repository signatures verified with $HOOK_APT_GPG_FINGERPRINT"
 
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
@@ -262,16 +252,24 @@ EOF
         with:
           path: ./repo
 
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    permissions:
-      pages: write
-      id-token: write
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
       - name: Deploy GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
+
+      - name: Verify published Pages repository
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 12); do
+            if curl --fail --silent --show-error --location --max-time 20 "$PAGES_BASE_URL/dists/stable/InRelease" -o "$RUNNER_TEMP/live-inrelease" && \
+               curl --fail --silent --show-error --location --max-time 20 "$PAGES_BASE_URL/dists/stable/main/binary-all/Packages" -o "$RUNNER_TEMP/live-packages" && \
+               grep -F "Version: ${HOOK_VERSION}" "$RUNNER_TEMP/live-packages" && \
+               grep -F "Package: hook" "$RUNNER_TEMP/live-packages"; then
+              echo "Published Pages repository verified."
+              exit 0
+            fi
+            echo "Pages propagation check $attempt/12 not ready; retrying..."
+            sleep 5
+          done
+          echo "ERROR: GitHub Pages did not expose the new repository metadata after deployment." >&2
+          exit 1
