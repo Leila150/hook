@@ -1,0 +1,75 @@
+name: Termux package repository
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build hook.deb
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="$(python3 - <<'PY'
+          import re
+          text=open('pyproject.toml',encoding='utf-8').read()
+          print(re.search(r'version\s*=\s*"([^"]+)"', text).group(1))
+          PY
+          )"
+          ROOT="$PWD/pkgroot"
+          mkdir -p "$ROOT/DEBIAN" "$ROOT/data/data/com.termux/files/usr/opt/hook" "$ROOT/data/data/com.termux/files/usr/bin"
+          cp -a src/hook "$ROOT/data/data/com.termux/files/usr/opt/hook/"
+          cat > "$ROOT/data/data/com.termux/files/usr/bin/hook" <<'SH'
+          #!/data/data/com.termux/files/usr/bin/sh
+          export PYTHONPATH="${PREFIX:-/data/data/com.termux/files/usr}/opt/hook${PYTHONPATH:+:$PYTHONPATH}"
+          exec python -m hook.cli "$@"
+          SH
+          chmod 755 "$ROOT/data/data/com.termux/files/usr/bin/hook"
+          cat > "$ROOT/DEBIAN/control" <<EOF
+          Package: hook
+          Version: ${VERSION}
+          Section: devel
+          Priority: optional
+          Architecture: all
+          Depends: python
+          Maintainer: Leila150
+          Description: HOOK programming language
+           Easy, powerful, extensible and universal programming language.
+          Homepage: https://github.com/Leila150/hook
+          EOF
+          dpkg-deb --build --root-owner-group "$ROOT" "hook_${VERSION}_all.deb"
+          mkdir -p repo/pool/main/h/hook repo/dists/stable/main/binary-all
+          cp "hook_${VERSION}_all.deb" repo/pool/main/h/hook/
+          dpkg-scanpackages repo/pool/main /dev/null > repo/dists/stable/main/binary-all/Packages
+          gzip -9c repo/dists/stable/main/binary-all/Packages > repo/dists/stable/main/binary-all/Packages.gz
+          SIZE=$(stat -c%s "repo/pool/main/h/hook/hook_${VERSION}_all.deb")
+          SHA=$(sha256sum "repo/pool/main/h/hook/hook_${VERSION}_all.deb" | cut -d' ' -f1)
+          cat > repo/dists/stable/Release <<EOF
+          Origin: HOOK
+          Label: HOOK
+          Suite: stable
+          Codename: stable
+          Architectures: all
+          Components: main
+          Date: $(date -Ru)
+          Description: HOOK Termux packages
+          EOF
+          cat > repo/index.html <<EOF
+          <!doctype html><html><body><h1>HOOK Termux Repository</h1><p>Install with <code>pkg update && pkg install hook</code> after adding this repository.</p><p>Latest package: hook ${VERSION} (${SIZE} bytes, SHA256 ${SHA})</p></body></html>
+          EOF
+
+      - name: Publish repository to GitHub Pages branch
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_branch: gh-pages
+          publish_dir: ./repo
+          force_orphan: true
