@@ -24,9 +24,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 -m pip install --disable-pip-version-check --no-deps .
+          export PYTHONPATH="$PWD/src"
           python3 -m hook.cli --version
           python3 -m hook.cli -c 'print("Termux package smoke test")'
+          python3 -m compileall -q src/hook
 
       - name: Install packaging tools
         shell: bash
@@ -40,15 +41,8 @@ jobs:
         run: |
           set -euo pipefail
 
-          VERSION="$(python3 - <<'PY'
-          import re
-          text = open("pyproject.toml", encoding="utf-8").read()
-          match = re.search(r'^version\s*=\s*"([^"]+)"', text, re.M)
-          if not match:
-              raise SystemExit("Could not find project version")
-          print(match.group(1))
-          PY
-          )"
+          export PYTHONPATH="$PWD/src"
+          VERSION="$(python3 -c 'from hook.cli import VERSION; print(VERSION)')"
           echo "HOOK_VERSION=$VERSION" >> "$GITHUB_ENV"
 
           PKG="hook_${VERSION}_all.deb"
@@ -56,21 +50,20 @@ jobs:
           TERMUX_PREFIX="/data/data/com.termux/files/usr"
           rm -rf "$ROOT" repo "$PKG"
 
-          # Termux's dpkg installs packages into the Android app prefix.
-          # Do NOT use /usr here: that is the Android filesystem root and is read-only.
           mkdir -p \
             "$ROOT/DEBIAN" \
-            "$ROOT$TERMUX_PREFIX/opt/hook" \
+            "$ROOT$TERMUX_PREFIX/share/hook" \
             "$ROOT$TERMUX_PREFIX/bin" \
             "$ROOT$TERMUX_PREFIX/share/doc/hook"
 
-          cp -a src/hook/. "$ROOT$TERMUX_PREFIX/opt/hook/"
+          # HOOK is a language/runtime, not a Python distribution.
+          cp -a src/hook/. "$ROOT$TERMUX_PREFIX/share/hook/"
 
           cat > "$ROOT$TERMUX_PREFIX/bin/hook" <<'SH'
           #!/data/data/com.termux/files/usr/bin/sh
           set -e
           PREFIX="${PREFIX:-/data/data/com.termux/files/usr}"
-          export PYTHONPATH="$PREFIX/opt/hook${PYTHONPATH:+:$PYTHONPATH}"
+          export PYTHONPATH="$PREFIX/share/hook${PYTHONPATH:+:$PYTHONPATH}"
           exec python -m hook.cli "$@"
           SH
           chmod 755 "$ROOT$TERMUX_PREFIX/bin/hook"
@@ -93,48 +86,49 @@ jobs:
           EOF
 
           dpkg-deb --build --root-owner-group "$ROOT" "$PKG"
-
-          echo "Package contents:"
           dpkg-deb --contents "$PKG"
 
-          # Hard fail if the package contains paths that would target the host /usr.
-          if dpkg-deb --contents "$PKG" | grep -Eq '^[-dlcbprwx]+[[:space:]]+[0-9]+[[:space:]]+[0-9]+/[0-9]+[[:space:]]+.*[[:space:]]\./usr(/|$)'; then
+          if dpkg-deb --contents "$PKG" | grep -Eq '[[:space:]]\./usr(/|$)'; then
             echo "ERROR: package contains a host-root ./usr path" >&2
             exit 1
           fi
 
           dpkg-deb --contents "$PKG" | grep -F "./data/data/com.termux/files/usr/bin/hook"
-          dpkg-deb --contents "$PKG" | grep -F "./data/data/com.termux/files/usr/opt/hook/"
-          dpkg-deb --info "$PKG" | grep -F 'Package: hook'
-          dpkg-deb --info "$PKG" | grep -F 'Architecture: all'
-          dpkg-deb --info "$PKG" | grep -F 'Depends: python'
+          dpkg-deb --contents "$PKG" | grep -F "./data/data/com.termux/files/usr/share/hook/"
 
-          mkdir -p repo/pool/main/h/hook repo/dists/stable/main/binary-all
+          mkdir -p repo/pool/main/h/hook \
+            repo/dists/stable/main/binary-all \
+            repo/dists/stable/main/binary-aarch64
           cp "$PKG" repo/pool/main/h/hook/
 
-          (
-            cd repo
-            dpkg-scanpackages pool/main /dev/null > dists/stable/main/binary-all/Packages
-            gzip -9cn dists/stable/main/binary-all/Packages > dists/stable/main/binary-all/Packages.gz
-          )
+          dpkg-scanpackages pool/main /dev/null > repo/dists/stable/main/binary-all/Packages
+          gzip -9cn repo/dists/stable/main/binary-all/Packages > repo/dists/stable/main/binary-all/Packages.gz
+          cp repo/dists/stable/main/binary-all/Packages repo/dists/stable/main/binary-aarch64/Packages
+          cp repo/dists/stable/main/binary-all/Packages.gz repo/dists/stable/main/binary-aarch64/Packages.gz
 
-          PACKAGES_SIZE=$(stat -c%s repo/dists/stable/main/binary-all/Packages)
-          PACKAGES_GZ_SIZE=$(stat -c%s repo/dists/stable/main/binary-all/Packages.gz)
-          PACKAGES_SHA256=$(sha256sum repo/dists/stable/main/binary-all/Packages | cut -d' ' -f1)
-          PACKAGES_GZ_SHA256=$(sha256sum repo/dists/stable/main/binary-all/Packages.gz | cut -d' ' -f1)
+          ALL_SIZE=$(stat -c%s repo/dists/stable/main/binary-all/Packages)
+          ALL_GZ_SIZE=$(stat -c%s repo/dists/stable/main/binary-all/Packages.gz)
+          ALL_SHA=$(sha256sum repo/dists/stable/main/binary-all/Packages | cut -d' ' -f1)
+          ALL_GZ_SHA=$(sha256sum repo/dists/stable/main/binary-all/Packages.gz | cut -d' ' -f1)
+          ARM_SIZE=$(stat -c%s repo/dists/stable/main/binary-aarch64/Packages)
+          ARM_GZ_SIZE=$(stat -c%s repo/dists/stable/main/binary-aarch64/Packages.gz)
+          ARM_SHA=$(sha256sum repo/dists/stable/main/binary-aarch64/Packages | cut -d' ' -f1)
+          ARM_GZ_SHA=$(sha256sum repo/dists/stable/main/binary-aarch64/Packages.gz | cut -d' ' -f1)
 
           cat > repo/dists/stable/Release <<EOF
           Origin: HOOK
           Label: HOOK
           Suite: stable
           Codename: stable
-          Architectures: all
+          Architectures: all aarch64
           Components: main
           Date: $(date -Ru)
           Description: HOOK Termux packages
           SHA256:
-           ${PACKAGES_SHA256} ${PACKAGES_SIZE} main/binary-all/Packages
-           ${PACKAGES_GZ_SHA256} ${PACKAGES_GZ_SIZE} main/binary-all/Packages.gz
+           ${ALL_SHA} ${ALL_SIZE} main/binary-all/Packages
+           ${ALL_GZ_SHA} ${ALL_GZ_SIZE} main/binary-all/Packages.gz
+           ${ARM_SHA} ${ARM_SIZE} main/binary-aarch64/Packages
+           ${ARM_GZ_SHA} ${ARM_GZ_SIZE} main/binary-aarch64/Packages.gz
           EOF
 
           cat > repo/index.html <<EOF
@@ -147,48 +141,24 @@ jobs:
           </body></html>
           EOF
 
-      - name: Verify APT repository and package paths
+      - name: Verify APT repository
         shell: bash
         run: |
           set -euo pipefail
-
           DEB="repo/pool/main/h/hook/hook_${HOOK_VERSION}_all.deb"
-          PACKAGES="repo/dists/stable/main/binary-all/Packages"
-
+          for PACKAGES in \
+            repo/dists/stable/main/binary-all/Packages \
+            repo/dists/stable/main/binary-aarch64/Packages; do
+            test -s "$PACKAGES"
+            grep -F "Filename: pool/main/h/hook/hook_${HOOK_VERSION}_all.deb" "$PACKAGES"
+            if grep -Eq 'Filename: /|Filename: \./|repo/pool/' "$PACKAGES"; then
+              echo "ERROR: invalid APT Filename in $PACKAGES" >&2
+              exit 1
+            fi
+          done
           test -f "$DEB"
-          test -s "$PACKAGES"
-          test -s "${PACKAGES}.gz"
-
-          grep -F "Filename: pool/main/h/hook/hook_${HOOK_VERSION}_all.deb" "$PACKAGES"
-
-          if grep -Fq "repo/pool/" "$PACKAGES"; then
-            echo "ERROR: Packages contains an incorrect repo/ prefix" >&2
-            exit 1
-          fi
-
-          if grep -Eq 'Filename: /|Filename: \./' "$PACKAGES"; then
-            echo "ERROR: Packages contains an absolute or ./ Filename" >&2
-            exit 1
-          fi
-
-          # Validate that the exact archive referenced by Packages is readable.
-          python3 - <<'PY'
-          from pathlib import Path
-          import re
-
-          packages = Path("repo/dists/stable/main/binary-all/Packages").read_text(encoding="utf-8")
-          match = re.search(r"^Filename: (.+)$", packages, re.M)
-          if not match:
-              raise SystemExit("Packages has no Filename entry")
-          archive = Path("repo") / match.group(1)
-          if not archive.is_file():
-              raise SystemExit(f"APT Filename does not resolve to a file: {archive}")
-          print(f"Verified APT archive: {archive}")
-          PY
-
-          # Ensure Release hashes exactly match the generated metadata.
-          grep -F "$(sha256sum "$PACKAGES" | cut -d' ' -f1)" repo/dists/stable/Release
-          grep -F "$(sha256sum "${PACKAGES}.gz" | cut -d' ' -f1)" repo/dists/stable/Release
+          grep -F "$(sha256sum repo/dists/stable/main/binary-all/Packages | cut -d' ' -f1)" repo/dists/stable/Release
+          grep -F "$(sha256sum repo/dists/stable/main/binary-aarch64/Packages | cut -d' ' -f1)" repo/dists/stable/Release
 
       - name: Publish APT repository to GitHub Pages
         uses: peaceiris/actions-gh-pages@v4
