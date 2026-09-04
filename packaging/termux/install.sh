@@ -5,7 +5,7 @@ PREFIX="${PREFIX:-/data/data/com.termux/files/usr}"
 REPO_URL="${HOOK_TERMUX_REPO_URL:-https://leila150.github.io/hook}"
 LIST_FILE="$PREFIX/etc/apt/sources.list.d/hook.list"
 
-if [ ! -d "$PREFIX" ] || [ -z "${TERMUX_VERSION:-}" ]; then
+if [ ! -d "$PREFIX" ] || ! command -v pkg >/dev/null 2>&1; then
     echo "ERROR: this installer must be run inside Termux." >&2
     exit 1
 fi
