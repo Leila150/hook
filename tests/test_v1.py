@@ -2,7 +2,7 @@ from hook import Engine, VERSION, FeatureRegistry
 
 
 def test_version():
-    assert VERSION == "1.0.0"
+    assert VERSION == "1.1.1"
 
 
 def test_basic_execution(capsys):
