@@ -1,0 +1,8 @@
+#!/data/data/com.termux/files/usr/bin/sh
+set -e
+
+PREFIX="${PREFIX:-/data/data/com.termux/files/usr}"
+HOOK_ROOT="$PREFIX/share/hook"
+
+export PYTHONPATH="$HOOK_ROOT${PYTHONPATH:+:$PYTHONPATH}"
+exec python -m hook.cli "$@"
