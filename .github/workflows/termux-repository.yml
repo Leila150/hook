@@ -37,6 +37,7 @@ jobs:
           print(match.group(1))
           PY
           )"
+          echo "HOOK_VERSION=$VERSION" >> "$GITHUB_ENV"
 
           PKG="hook_${VERSION}_all.deb"
           ROOT="$PWD/pkgroot"
@@ -84,9 +85,7 @@ jobs:
           cp "$PKG" repo/pool/main/h/hook/
 
           # Generate APT metadata from inside the repository root so that
-          # Packages contains paths relative to the repository URL.  Using
-          # "repo/pool/main" here would incorrectly advertise repo/pool/...
-          # and cause 404s when GitHub Pages serves ./repo as its document root.
+          # Packages contains paths relative to the repository URL.
           (
             cd repo
             dpkg-scanpackages pool/main /dev/null > dists/stable/main/binary-all/Packages
@@ -126,8 +125,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test -f repo/pool/main/h/hook/hook_${VERSION}_all.deb || true
-          grep -F "pool/main/h/hook/hook_${VERSION}_all.deb" repo/dists/stable/main/binary-all/Packages
+          test -f "repo/pool/main/h/hook/hook_${HOOK_VERSION}_all.deb"
+          grep -F "pool/main/h/hook/hook_${HOOK_VERSION}_all.deb" repo/dists/stable/main/binary-all/Packages
           if grep -Fq "repo/pool/" repo/dists/stable/main/binary-all/Packages; then
             echo "ERROR: Packages contains an incorrect repo/ prefix" >&2
             exit 1
