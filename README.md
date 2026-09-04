@@ -1,6 +1,8 @@
-# HOOK 1.1
+# HOOK 1.1.1
 
 HOOK is a general-purpose programming language designed around four goals: **Easy, Powerful, Extensible, Universal.**
+
+HOOK is its own language and runtime. It is **not distributed as a Python package**. Python is currently an implementation dependency of the runtime; users install HOOK itself through its CLI/package distribution.
 
 ## CLI
 
@@ -54,7 +56,7 @@ pkg update
 pkg upgrade hook
 ```
 
-The package installs the `hook` executable and HOOK runtime and depends on Termux's `python` package. It is architecture-independent because the language runtime is Python-based.
+The Termux package installs the HOOK runtime source and `hook` launcher directly. It does not invoke `pip` or install a Python distribution package.
 
 ### Manual repository setup
 
@@ -96,6 +98,16 @@ HOOK uses indentation-based `.hk` source with no `end` keyword and provides vari
 ## Mobile
 
 `hook mobile build` generates Android and iOS application projects and bundles the original `.hk` source. Android builds require an Android/Gradle toolchain; iOS builds require Xcode on macOS. The current mobile launcher is a packaging/runtime foundation and does not yet translate arbitrary HOOK source into native machine code.
+
+## Development
+
+For repository development, run the source tree directly instead of installing it with `pip`:
+
+```sh
+export PYTHONPATH="$PWD/src"
+python -m hook.cli version
+python -m pytest
+```
 
 ## License
 
