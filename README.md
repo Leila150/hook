@@ -1,28 +1,53 @@
-# HOOK 1.0
+# HOOK 1.1
 
 HOOK is a general-purpose programming language designed around four goals: **Easy, Powerful, Extensible, Universal.**
 
-## 1.0
+## CLI
 
-HOOK 1.0 consolidates the language interpreter and its runtime subsystems into one public API. The project includes foundations for:
+```text
+hook file.hk
+hook run file.hk
+hook -c 'print("hello")'
+hook repl
+hook version
+hook check file.hk
+hook fmt file.hk
+hook fmt file.hk --write
+hook new my-project
+hook test
+hook build
+hook mobile build android main.hk --output build/android
+hook mobile build ios main.hk --output build/ios
+hook compat status
+hook compat doctor
+hook compat list
+hook compat create gaming
+hook compat inspect gaming
+hook compat run program.exe
+```
 
-- indentation-based `.hk` source with no `end` keyword
-- variables, constants, functions, closures, classes and inheritance
-- typed parameters, conversions and heterogeneous collections
-- conditions, loops, nested `break N`, exceptions and `finally`
-- first-class functions and execution helpers
-- persistent `.hkd` data storage
-- HTTP client and web application primitives
-- API routing primitives
-- asynchronous execution and concurrency primitives
-- tensors, neural-network primitives, optimizers and datasets
-- 2D game/application primitives, vectors, scenes, entities and audio metadata
-- C/C++/Rust native interop, pointers and memory primitives
-- packages, extensions, statements, loops, operators, processors and dialects
-- compiler/bytecode foundations and a core VM
-- formatter, linter, diagnostics, profiler and test-runner foundations
-- cross-platform/native/Android toolchain metadata
-- a standard module surface for `json`, `os`, `math`, `random`, `path`, `time`, `async`, `web`, `api`, `ai`, `game`, `native`, `memory`, `tooling`, `packages`, and `dialects`
+The CLI now provides project creation, source checking, formatting, tests, build/toolchain entry points, mobile project generation, and compatibility-runtime management.
+
+## Termux
+
+HOOK has a Termux package recipe and an automated package repository. Until HOOK is accepted into the official Termux repositories, add the HOOK repository once:
+
+```sh
+bash packaging/termux/add-repo.sh
+pkg update
+pkg install hook
+```
+
+After installation:
+
+```sh
+hook --version
+hook repl
+hook new hello
+hook run hello/main.hk
+```
+
+The package installs the `hook` command and the HOOK runtime and depends on Termux's `python` package. The package is architecture-independent because the language runtime is Python-based.
 
 ## Example
 
@@ -34,10 +59,10 @@ function add(a: num, b: num) do
     return a + b
 
 if add(x, y) == 30 then
-    print("HOOK 1.0 works!")
+    print("HOOK works!")
 ```
 
-## Module imports
+## Modules
 
 ```hook
 import json
@@ -46,23 +71,13 @@ from math import sqrt
 print(sqrt(81))
 ```
 
-The built-in modules are exposed through the same runtime and can also be accessed directly from an `Engine` instance.
+## Project
 
-## CLI
+HOOK uses indentation-based `.hk` source with no `end` keyword and provides variables, functions, classes, inheritance, exceptions, persistent data, HTTP/API primitives, concurrency, AI foundations, 2D/3D graphics, physics, native interop, packages, extensions, compiler/VM foundations, and mobile build foundations.
 
-```text
-hook file.hk
-hook run file.hk
-hook -c 'print("hello")'
-hook repl
-hook --version
-```
+## Mobile
 
-## Status
-
-1.0 is the first integrated public release line. The repository intentionally keeps low-level compiler, native, graphics, Android, GPU and advanced AI components modular so they can evolve without changing the core HOOK language syntax.
-
-The goal is not to fake completeness with placeholders: each subsystem is exposed as a real Python runtime component, while deeper platform backends can be added independently.
+`hook mobile build` generates Android and iOS application projects and bundles the original `.hk` source. Android builds require an Android/Gradle toolchain; iOS builds require Xcode on macOS. The current mobile launcher is a packaging/runtime foundation and does not yet translate arbitrary HOOK source into native machine code.
 
 ## License
 
