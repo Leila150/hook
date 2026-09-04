@@ -95,7 +95,8 @@ def build_parser():
         description="HOOK 1.0 — easy, powerful, extensible, universal.",
     )
     p.add_argument("target", nargs="?", help="repl, run, compat, or a .hk source file")
-    p.add_argument("file", nargs="?", help=".hk source file when using run")
+    p.add_argument("file", nargs="?", help=".hk file, compat action, or executable")
+    p.add_argument("compat_args", nargs=argparse.REMAINDER, help="arguments passed to a compatibility executable")
     p.add_argument("-c", "--code", metavar="CODE", help="execute HOOK source")
     p.add_argument("--version", action="version", version=f"HOOK {VERSION}")
     return p
@@ -117,14 +118,16 @@ def main(argv=None) -> int:
             error(f"SystemError: {exc}")
             return 1
     if ns.target == "compat":
-        # Keep the syntax intentionally simple: `hook compat status` or
-        # `hook compat run program.exe [args...]`.
-        if not ns.file or ns.file == "status":
+        action = ns.file or "status"
+        if action == "status":
             return _compat_status()
-        if ns.file == "run":
-            error("compat run requires an executable path")
-            return 2
-        return _compat_run(ns.file, [])
+        if action == "run":
+            if not ns.compat_args:
+                error("compat run requires an executable path")
+                return 2
+            return _compat_run(ns.compat_args[0], ns.compat_args[1:])
+        error(f"unknown compat action: {action}")
+        return 2
     if ns.target == "run":
         if not ns.file:
             error("run requires a .hk file")
