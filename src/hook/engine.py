@@ -8,6 +8,8 @@ from .errors import *
 @dataclass
 class Token:
     kind:str; value:str; line:int; column:int
+    def __str__(self): return self.value or self.kind
+    __repr__ = __str__
 
 class Lexer:
     def __init__(self,source): self.source=source
@@ -32,6 +34,51 @@ class Lexer:
 @dataclass
 class Node:
     text:str; line:int; indent:int; children:list
+    def __repr__(self): return f"Node({self.text!r}, line={self.line})"
+
+def _type_display(value):
+    if isinstance(value, HookType): return value.name
+    if isinstance(value, HookErrorType): return value.name
+    if isinstance(value, HookClass): return value.name
+    if isinstance(value, HookFunction): return f"function {value.name}"
+    if isinstance(value, HookObject): return f"{value.cls.name} object"
+    if isinstance(value, Token): return f"Token({value.kind}, {value.value!r})"
+    return type(value).__name__
+
+def hook_repr(value):
+    """Return the canonical human-readable representation of any HOOK value."""
+    if isinstance(value, HookType): return value.name
+    if isinstance(value, HookErrorType): return value.name
+    if isinstance(value, HookClass): return f"class {value.name}"
+    if isinstance(value, HookFunction): return f"function {value.name}"
+    if isinstance(value, HookObject): return f"<{value.cls.name} object>"
+    if isinstance(value, HookError): return str(value)
+    if value is None: return "None"
+    if isinstance(value, bool): return "True" if value else "False"
+    if isinstance(value, str): return value
+    if isinstance(value, list): return "[" + ", ".join(hook_repr(v) for v in value) + "]"
+    if isinstance(value, tuple): return "(" + ", ".join(hook_repr(v) for v in value) + ("," if len(value)==1 else "") + ")"
+    if isinstance(value, dict): return "{" + ", ".join(f"{hook_repr(k)}: {hook_repr(v)}" for k,v in value.items()) + "}"
+    if isinstance(value, Token): return f"Token({value.kind}, {value.value!r})"
+    return str(value)
+
+def hook_print(*values, sep=" ", end="\n"):
+    print(sep.join(hook_repr(v) for v in values), end=end)
+
+class HookType:
+    """A printable HOOK language type descriptor."""
+    def __init__(self,name,converter=None): self.name=name; self.converter=converter
+    def __str__(self): return self.name
+    def __repr__(self): return self.name
+    def __call__(self,*args):
+        if self.converter is None: return self
+        if len(args)!=1: raise TypeError(f"{self.name} conversion expects one value")
+        return self.converter(args[0])
+
+class HookErrorType(HookType):
+    """Printable error type which can also construct the corresponding HOOK error."""
+    def __init__(self,name,error_cls): super().__init__(name); self.error_cls=error_cls
+    def __call__(self,message="",*args,**kwargs): return self.error_cls(message,*args,**kwargs)
 
 class Parser:
     def __init__(self,source):
@@ -56,11 +103,9 @@ def _strip(s,word): return s[:-len(word)].rstrip() if s.rstrip().endswith(word) 
 
 def _expr(s):
     s=s.strip(); s=re.sub(r'\btrue\b','True',s,flags=re.I); s=re.sub(r'\bfalse\b','False',s,flags=re.I)
-    # HOOK's negated comparison operators.
     for op,fn in [('!<=','__not_le__'),('!>=','__not_ge__'),('!<','__not_lt__'),('!>','__not_gt__')]:
         s=re.sub(r'(.+?)\s+'+re.escape(op)+r'\s+(.+)',lambda m:f'{fn}({m.group(1)}, {m.group(2)})',s)
     s=s.replace(' ?? ',' or ')
-    # Logical word operators.
     for word,repl in [('nand','(not ({a} and {b}))'),('nor','(not ({a} or {b}))'),('xor','(bool({a}) != bool({b}))'),('xnor','(bool({a}) == bool({b}))')]:
         m=re.fullmatch(r'(.+?)\s+'+word+r'\s+(.+)',s)
         if m: s=repl.format(a=m.group(1),b=m.group(2))
@@ -79,11 +124,7 @@ class Scope:
     def set(self,k,v,kind=None):
         if k in self.const: raise RuntimeError(f"constant '{k}' cannot be reassigned")
         if kind=='const': self.values[k]=v; self.const.add(k); return
-        if kind=='global':
-            r=self
-            while r.parent:r=r.parent
-            r.values[k]=v; return
-        if kind=='all':
+        if kind in ('global','all'):
             r=self
             while r.parent:r=r.parent
             r.values[k]=v; return
@@ -96,6 +137,8 @@ class BreakSignal(Exception):
 
 class HookFunction:
     def __init__(self,name,params,body,closure,engine,async_=False): self.name=name;self.params=params;self.body=body;self.closure=closure;self.engine=engine;self.async_=async_
+    def __str__(self): return f"function {self.name}"
+    __repr__=__str__
     def __call__(self,*args,**kwargs):
         s=Scope(self.closure); pos=0
         for name,typ,default,vararg in self.params:
@@ -119,6 +162,8 @@ class HookClass:
                 f=engine.make_function(n,scope);self.methods[f.name]=f
             elif '=' in n.text:
                 k,v=n.text.split('=',1);self.attrs[k.strip()]=engine.expr(v,scope)
+    def __str__(self): return f"class {self.name}"
+    __repr__=__str__
     def __call__(self,*args,**kwargs):
         o=HookObject(self); init=self.find('__init__') or self.find('init')
         if init:init(o,*args,**kwargs)
@@ -132,6 +177,8 @@ class HookClass:
 
 class HookObject:
     def __init__(self,cls):object.__setattr__(self,'cls',cls);object.__setattr__(self,'attrs',{})
+    def __str__(self): return f"<{self.cls.name} object>"
+    __repr__=__str__
     def __getattr__(self,k):
         if k in self.attrs:return self.attrs[k]
         c=self.cls
@@ -147,11 +194,31 @@ class Engine:
     def __init__(self,filename=None): self.filename=filename;self.root=Scope();self._builtins()
     def _builtins(self):
         def rng(a,b=None,step=1): return list(range(a,b,step)) if b is not None else list(range(1,a+1,step))
-        self.root.values.update({'True':True,'False':False,'None':None,'print':print,'input':input,'len':len,'range':rng,'abs':abs,'min':min,'max':max,'sum':sum,'round':round,'bool':bool,'str':str,'int':int,'float':float,
-          'text':lambda x:str(x),'num':lambda x:int(x),'decimal':lambda x:float(x),'dec':lambda x:float(x),'boolean':lambda x:bool(x),
-          'list':lambda *x:list(x),'unique':lambda *x:tuple(x),'data':lambda *x:({} if not x else dict(x)),'group':lambda x:x,'type':self.type_name,'convert':self.convert,
-          '__not_le__':lambda a,b:not a<=b,'__not_ge__':lambda a,b:not a>=b,'__not_lt__':lambda a,b:not a<b,'__not_gt__':lambda a,b:not a>b})
+        type_names=['text','num','decimal','boolean','None','Any','All','list','unique','data','group','Object','Type','Concept','Operator','Loop']
+        types={name:HookType(name) for name in type_names}
+        error_types={name:HookErrorType(name,cls) for name,cls in ERRORS.items()}
+        def make_text(x): return str(x)
+        def make_num(x): return int(x)
+        def make_decimal(x): return float(x)
+        def make_boolean(x): return bool(x)
+        types['text'].converter=make_text; types['num'].converter=make_num; types['decimal'].converter=make_decimal; types['boolean'].converter=make_boolean
+        self.root.values.update({
+          'True':True,'False':False,'None':None,'print':hook_print,'input':input,'len':len,'range':rng,
+          'abs':abs,'min':min,'max':max,'sum':sum,'round':round,'bool':bool,'str':str,'int':int,'float':float,
+          'text':types['text'],'num':types['num'],'decimal':types['decimal'],'dec':types['decimal'],'boolean':types['boolean'],
+          'list':types['list'],'unique':types['unique'],'data':types['data'],'group':types['group'],
+          'Object':types['Object'],'Type':types['Type'],'Concept':types['Concept'],'Operator':types['Operator'],'Loop':types['Loop'],
+          'type':self.type_name,'convert':self.convert,
+          '__not_le__':lambda a,b:not a<=b,'__not_ge__':lambda a,b:not a>=b,'__not_lt__':lambda a,b:not a<b,'__not_gt__':lambda a,b:not a>b
+        })
+        self.root.values.update(error_types)
     def type_name(self,x):
+        if isinstance(x,HookType):return 'Type'
+        if isinstance(x,HookErrorType):return 'Type'
+        if isinstance(x,HookClass):return x.name
+        if isinstance(x,HookFunction):return 'function'
+        if isinstance(x,HookObject):return x.cls.name
+        if isinstance(x,HookError):return x.__class__.__name__
         if x is None:return 'None'
         if isinstance(x,bool):return 'boolean'
         if isinstance(x,int) and not isinstance(x,bool):return 'num'
@@ -160,9 +227,10 @@ class Engine:
         if isinstance(x,list):return 'list'
         if isinstance(x,tuple):return 'unique'
         if isinstance(x,dict):return 'data'
-        return getattr(x,'name',x.__class__.__name__)
+        return x.__class__.__name__
     def convert(self,x,t):
-        n=t if isinstance(t,str) else getattr(t,'__name__',str(t)); f={'text':str,'num':int,'decimal':float,'dec':float,'boolean':bool}.get(n)
+        n=t.name if isinstance(t,HookType) else (t if isinstance(t,str) else getattr(t,'__name__',str(t)))
+        f={'text':str,'num':int,'decimal':float,'dec':float,'boolean':bool}.get(n)
         if not f: raise TypeError(f"cannot convert to {n}")
         try:return f(x)
         except Exception as e:raise ValueError(str(e))
@@ -209,7 +277,6 @@ class Engine:
         while i<len(nodes):
             n=nodes[i];s=n.text
             if s in ('else','finally') or s.startswith(('elif ','except ','catch ')):i+=1;continue
-            # declarations
             m=re.match(r'^(local|global|all|const|reassign)\s+(.+?)\s*=\s*(.*)$',s)
             if m:self.assign(m.group(2),self.expr(m.group(3),scope),scope,m.group(1));i+=1;continue
             if re.match(r'^(?:async\s+)?(?:function|func|def)\s+',s):
@@ -222,14 +289,12 @@ class Engine:
                     try:bs.append(scope.get(b))
                     except NameError:bs.append(None)
                 scope.values[m.group(1)]=HookClass(m.group(1),bs,n.children or [],self,scope);i+=1;continue
-            # if / elif / else chain
             if s.startswith('if '):
                 chain=[n];j=i+1
                 while j<len(nodes) and (nodes[j].text.startswith('elif ') or nodes[j].text=='else'):chain.append(nodes[j]);j+=1
                 for c in chain:
                     if c.text=='else' or self.expr(_strip(c.text[2:].strip(),'then'),scope):self.exec_block(c.children or [],Scope(scope));break
                 i=j;continue
-            # try / except / catch / finally chain
             if s=='try':
                 clauses,j=self._clauses(nodes,i,['except','catch','finally']);err=None
                 try:self.exec_block(n.children or [],Scope(scope))
@@ -245,7 +310,6 @@ class Engine:
                     if not handled:raise err
                 if 'finally' in clauses:self.exec_block(clauses['finally'].children or [],Scope(scope))
                 i=j;continue
-            # loops, including loop else/finally
             if s.startswith(('while ','for ','foreach ','repeat','forever','until ')):
                 clauses,j=self._clauses(nodes,i,['else','finally']);broke=False;error=None
                 try:
