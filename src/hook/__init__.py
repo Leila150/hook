@@ -1,4 +1,4 @@
-"""HOOK v0.1 public API."""
+"""HOOK 1.0 public API."""
 from .engine import run, execute, compile_source, Lexer, Parser, Engine
 from .errors import HookError
 from .runtime_extensions import install_engine_extensions
@@ -22,11 +22,27 @@ from .game_runtime import Color, Vec2, Entity, Scene, Game, GUI, Audio
 from .ai_training import Parameter, Optimizer, SGD, Adam, mse, binary_cross_entropy, Dataset
 from .toolchain import TARGETS, Project, AndroidToolchain, Codegen
 from .dialects import Dialect, DialectEngine, SyntaxExtension, ExtensionPipeline
+from .v1_runtime import VERSION, LANGUAGE, Module, FeatureRegistry, install_v1_runtime
 
 install_engine_extensions(Engine)
 install_extension_system(Engine)
 install_universal_runtime(Engine)
 install_extension_runtime(Engine)
+install_v1_runtime(Engine)
 
-__version__="0.1.0"
-__all__=["run","execute","compile_source","Lexer","Parser","Engine","Compiler","VM","Program","Instruction","HookError","__version__","ExtensionBase","Type","Error","Statement","Loop","Operator","Language","Processor","ExtensionDefinition","ExtensionRegistry","ExtensionConflict","CATEGORIES","ASTNode","ASTParser","SemanticAnalyzer","SemanticError","BytecodeCompiler","BytecodeProgram","LanguagePipeline","HKD","HKDError","PersistentScope","PersistentScopes","Formatter","Linter","Diagnostic","Profiler","TestRunner","Package","PackageManager","NativeLibrary","CInterop","CppInterop","RustInterop","ABI","Tensor","tensor","softmax","argmax","relu","sigmoid","linear","Sequential","ModelRegistry","SourcePosition","TraceFrame","TracebackBuilder","SourceMap","DiagnosticEngine","CancellationToken","Channel","TaskGroup","Scheduler","Mutex","Atom","Pointer","MemoryManager","Unsafe","Ownership","Binding","NativeBindings","Op","Bytecode","CoreVM","Request","Response","Router","WebApp","Color","Vec2","Entity","Scene","Game","GUI","Audio","Parameter","Optimizer","SGD","Adam","mse","binary_cross_entropy","Dataset","TARGETS","Project","AndroidToolchain","Codegen","Dialect","DialectEngine","SyntaxExtension","ExtensionPipeline"]
+__version__ = VERSION
+__all__ = [
+    "run", "execute", "compile_source", "Lexer", "Parser", "Engine", "Compiler", "VM", "Program", "Instruction",
+    "HookError", "__version__", "VERSION", "LANGUAGE", "Module", "FeatureRegistry",
+    "ExtensionBase", "Type", "Error", "Statement", "Loop", "Operator", "Language", "Processor",
+    "ExtensionDefinition", "ExtensionRegistry", "ExtensionConflict", "CATEGORIES", "ASTNode", "ASTParser",
+    "SemanticAnalyzer", "SemanticError", "BytecodeCompiler", "BytecodeProgram", "LanguagePipeline", "HKD", "HKDError",
+    "PersistentScope", "PersistentScopes", "Formatter", "Linter", "Diagnostic", "Profiler", "TestRunner",
+    "Package", "PackageManager", "NativeLibrary", "CInterop", "CppInterop", "RustInterop", "ABI", "Tensor", "tensor",
+    "softmax", "argmax", "relu", "sigmoid", "linear", "Sequential", "ModelRegistry", "SourcePosition", "TraceFrame",
+    "TracebackBuilder", "SourceMap", "DiagnosticEngine", "CancellationToken", "Channel", "TaskGroup", "Scheduler",
+    "Mutex", "Atom", "Pointer", "MemoryManager", "Unsafe", "Ownership", "Binding", "NativeBindings", "Op", "Bytecode",
+    "CoreVM", "Request", "Response", "Router", "WebApp", "Color", "Vec2", "Entity", "Scene", "Game", "GUI", "Audio",
+    "Parameter", "Optimizer", "SGD", "Adam", "mse", "binary_cross_entropy", "Dataset", "TARGETS", "Project",
+    "AndroidToolchain", "Codegen", "Dialect", "DialectEngine", "SyntaxExtension", "ExtensionPipeline", "install_v1_runtime",
+]
