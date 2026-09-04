@@ -24,6 +24,7 @@ from .game_runtime import Color, Vec2, Entity, Scene, Game, GUI, Audio
 from .toolchain import TARGETS, TRIPLES, Tool, find_tool, Project, AndroidToolchain, Codegen
 from .dialects import Dialect, DialectEngine, SyntaxExtension, ExtensionPipeline
 from .graphics_runtime import Vec3, Camera, Mesh, SoftwareRenderer, GPUBackend
+from .compat import Component, CompatibilityConfig, CompatibilityError, detect_components, is_android, host_arch, WinlatorRuntime
 from .full_runtime import (TensorValue, ParameterValue, LinearLayer, ReLULayer, SoftmaxLayer, NeuralModel, SGDOptimizer, AdamOptimizer, mse_loss, cross_entropy, NativeToolchain, find_native_compiler, compile_c, load_library, CFFI, AndroidProject, GUIRuntime, GameEntity, GameRuntime, Database, TCPServer, format_hook, lint_hook, Debugger, LSPServer)
 from .completion import Position, Diagnostics, SourceAnalyzer, ExpressionVM, Value, TaskScheduler, AsyncChannel, ModuleSpec, ModuleResolver, NativeTarget, TargetResolver, Serializer, CompilationResult, CompletePipeline
 from .v1_runtime import VERSION, LANGUAGE, Module, FeatureRegistry, install_v1_runtime
