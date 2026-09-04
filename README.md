@@ -26,28 +26,46 @@ hook compat inspect gaming
 hook compat run program.exe
 ```
 
-The CLI now provides project creation, source checking, formatting, tests, build/toolchain entry points, mobile project generation, and compatibility-runtime management.
+The CLI provides project creation, source checking, formatting, tests, build/toolchain entry points, mobile project generation, and compatibility-runtime management.
 
 ## Termux
 
-HOOK has a Termux package recipe and an automated package repository. Until HOOK is accepted into the official Termux repositories, add the HOOK repository once:
+HOOK can be installed through Termux's normal `pkg` package manager from the HOOK APT repository. Until HOOK is accepted into the official Termux repositories, the custom repository must be bootstrapped once.
+
+### Fresh Termux installation
+
+Run this directly in Termux:
 
 ```sh
-bash packaging/termux/add-repo.sh
-pkg update
-pkg install hook
+curl -fsSL https://raw.githubusercontent.com/Leila150/hook/main/packaging/termux/install.sh | bash
 ```
 
-After installation:
+Then verify:
 
 ```sh
 hook --version
 hook repl
-hook new hello
-hook run hello/main.hk
 ```
 
-The package installs the `hook` command and the HOOK runtime and depends on Termux's `python` package. The package is architecture-independent because the language runtime is Python-based.
+The installer adds the HOOK APT repository, runs `pkg update`, and installs the `hook` package. After that, future upgrades use the normal package manager:
+
+```sh
+pkg update
+pkg upgrade hook
+```
+
+The package installs the `hook` executable and HOOK runtime and depends on Termux's `python` package. It is architecture-independent because the language runtime is Python-based.
+
+### Manual repository setup
+
+If you prefer not to pipe a script to Bash:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/Leila150/hook/main/packaging/termux/add-repo.sh -o $TMPDIR/hook-add-repo.sh
+bash $TMPDIR/hook-add-repo.sh
+pkg update
+pkg install hook
+```
 
 ## Example
 
