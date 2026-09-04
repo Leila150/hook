@@ -14,68 +14,92 @@ on:
         default: true
         type: boolean
       build_ios:
-        description: Build iOS IPA (unsigned simulator/archive artifact)
+        description: Generate iOS project bundle
         required: false
         default: true
         type: boolean
   push:
     paths:
       - '**.hk'
-      - 'src/hook/mobile_compiler.py'
+      - 'src/hook/**'
       - '.github/workflows/mobile-build.yml'
+
+permissions:
+  contents: read
 
 jobs:
   android:
     if: ${{ github.event_name != 'workflow_dispatch' || inputs.build_android }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
       - uses: android-actions/setup-android@v3
       - uses: gradle/actions/setup-gradle@v4
-      - name: Install HOOK
-        run: python -m pip install -e .
       - name: Generate Android project
         env:
           HOOK_SOURCE: ${{ inputs.source || 'examples/hello.hk' }}
+          PYTHONPATH: ${{ github.workspace }}/src
         run: |
+          set -euo pipefail
+          python -m hook.mobile_compiler >/dev/null 2>&1 || true
           python - <<'PY'
           import os
+          from pathlib import Path
           from hook.mobile_compiler import AndroidCompiler
-          AndroidCompiler(package='hook.app', app_name='HOOK App').generate(os.environ['HOOK_SOURCE'], 'build/android')
+          source = os.environ['HOOK_SOURCE']
+          project = AndroidCompiler(package='hook.app', app_name='HOOK App').generate(source, 'build/android')
+          required = [project / 'settings.gradle', project / 'build.gradle', project / 'app/build.gradle', project / 'app/src/main/AndroidManifest.xml']
+          missing = [str(p) for p in required if not p.is_file()]
+          if missing:
+              raise SystemExit(f'Generated Android project is incomplete: {missing}')
+          print(f'Generated Android project: {project}')
           PY
       - name: Build APK
         working-directory: build/android
-        run: gradle assembleRelease
+        run: gradle --no-daemon assembleRelease
+      - name: Verify APK artifact
+        run: |
+          set -euo pipefail
+          test -n "$(find build/android/app/build/outputs/apk -type f -name '*.apk' -print -quit)"
       - uses: actions/upload-artifact@v4
         with:
           name: hook-android-apk
           path: build/android/app/build/outputs/apk/**/*.apk
+          if-no-files-found: error
 
   ios:
     if: ${{ github.event_name != 'workflow_dispatch' || inputs.build_ios }}
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
-      - name: Install HOOK
-        run: python -m pip install -e .
-      - name: Generate iOS source bundle
+      - name: Generate iOS project bundle
         env:
           HOOK_SOURCE: ${{ inputs.source || 'examples/hello.hk' }}
+          PYTHONPATH: ${{ github.workspace }}/src
         run: |
+          set -euo pipefail
           python - <<'PY'
           import os
+          from pathlib import Path
           from hook.mobile_compiler import IOSCompiler
-          IOSCompiler(bundle_id='com.hook.app', app_name='HOOK App').generate(os.environ['HOOK_SOURCE'], 'build/ios')
+          source = os.environ['HOOK_SOURCE']
+          project = IOSCompiler(bundle_id='com.hook.app', app_name='HOOK App').generate(source, 'build/ios')
+          required = [project / 'README.md', project / 'PROJECT_STATUS.txt', project / 'HOOKApp' / 'HOOKApp.swift', project / 'HOOKApp.xcodeproj' / 'project.pbxproj']
+          missing = [str(p) for p in required if not p.is_file()]
+          if missing:
+              raise SystemExit(f'Generated iOS project bundle is incomplete: {missing}')
+          print(f'Generated iOS project bundle: {project}')
           PY
-      - name: Package iOS source artifact
-        run: ditto -c -k --sequesterRsrc --keepParent build/ios build/HOOK-iOS-source.zip
+      - name: Package iOS project artifact
+        run: ditto -c -k --sequesterRsrc --keepParent build/ios build/HOOK-iOS-project.zip
       - uses: actions/upload-artifact@v4
         with:
           name: hook-ios-project
-          path: build/HOOK-iOS-source.zip
+          path: build/HOOK-iOS-project.zip
+          if-no-files-found: error
