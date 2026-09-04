@@ -21,7 +21,7 @@ on:
   push:
     branches: [main]
     paths:
-      - '**.hk'
+      - '**/*.hk'
       - 'src/hook/**'
       - '.github/workflows/mobile-build.yml'
 
