@@ -42,7 +42,6 @@ jobs:
           ROOT="$PWD/pkgroot"
           rm -rf "$ROOT" repo "$PKG"
 
-          # Debian/Termux packages must place files under usr/, not data/data/.
           mkdir -p \
             "$ROOT/DEBIAN" \
             "$ROOT/usr/opt/hook" \
@@ -77,7 +76,6 @@ jobs:
 
           dpkg-deb --build --root-owner-group "$ROOT" "$PKG"
 
-          # Verify the package really contains the executable and runtime.
           dpkg-deb --contents "$PKG" | grep -F 'usr/bin/hook'
           dpkg-deb --contents "$PKG" | grep -F 'usr/opt/hook/'
           dpkg-deb --info "$PKG" | grep -F 'Package: hook'
@@ -85,8 +83,15 @@ jobs:
           mkdir -p repo/pool/main/h/hook repo/dists/stable/main/binary-all
           cp "$PKG" repo/pool/main/h/hook/
 
-          dpkg-scanpackages repo/pool/main /dev/null > repo/dists/stable/main/binary-all/Packages
-          gzip -9cn repo/dists/stable/main/binary-all/Packages > repo/dists/stable/main/binary-all/Packages.gz
+          # Generate APT metadata from inside the repository root so that
+          # Packages contains paths relative to the repository URL.  Using
+          # "repo/pool/main" here would incorrectly advertise repo/pool/...
+          # and cause 404s when GitHub Pages serves ./repo as its document root.
+          (
+            cd repo
+            dpkg-scanpackages pool/main /dev/null > dists/stable/main/binary-all/Packages
+            gzip -9cn dists/stable/main/binary-all/Packages > dists/stable/main/binary-all/Packages.gz
+          )
 
           PACKAGES_SIZE=$(stat -c%s repo/dists/stable/main/binary-all/Packages)
           PACKAGES_GZ_SIZE=$(stat -c%s repo/dists/stable/main/binary-all/Packages.gz)
@@ -116,6 +121,17 @@ jobs:
             <p>Latest version: <strong>${VERSION}</strong></p>
           </body></html>
           EOF
+
+      - name: Verify APT metadata paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f repo/pool/main/h/hook/hook_${VERSION}_all.deb || true
+          grep -F "pool/main/h/hook/hook_${VERSION}_all.deb" repo/dists/stable/main/binary-all/Packages
+          if grep -Fq "repo/pool/" repo/dists/stable/main/binary-all/Packages; then
+            echo "ERROR: Packages contains an incorrect repo/ prefix" >&2
+            exit 1
+          fi
 
       - name: Publish APT repository to GitHub Pages
         uses: peaceiris/actions-gh-pages@v4
