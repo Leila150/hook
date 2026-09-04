@@ -21,7 +21,6 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Validate HOOK runtime
-        shell: bash
         run: |
           set -euo pipefail
           export PYTHONPATH="$PWD/src"
@@ -30,47 +29,35 @@ jobs:
           python3 -m compileall -q src/hook
 
       - name: Install packaging tools
-        shell: bash
         run: |
           set -euo pipefail
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends dpkg-dev
 
-      - name: Build Termux .deb and APT repository
+      - name: Build Termux package and APT repository
         shell: bash
         run: |
           set -euo pipefail
-
           export PYTHONPATH="$PWD/src"
           VERSION="$(python3 -c 'from hook.cli import VERSION; print(VERSION)')"
           echo "HOOK_VERSION=$VERSION" >> "$GITHUB_ENV"
-
           PKG="hook_${VERSION}_all.deb"
           ROOT="$PWD/pkgroot"
-          TERMUX_PREFIX="/data/data/com.termux/files/usr"
+          PREFIX="/data/data/com.termux/files/usr"
           rm -rf "$ROOT" repo "$PKG"
 
-          mkdir -p \
-            "$ROOT/DEBIAN" \
-            "$ROOT$TERMUX_PREFIX/share/hook" \
-            "$ROOT$TERMUX_PREFIX/bin" \
-            "$ROOT$TERMUX_PREFIX/share/doc/hook"
+          mkdir -p "$ROOT/DEBIAN" "$ROOT$PREFIX/share/hook" "$ROOT$PREFIX/bin" "$ROOT$PREFIX/share/doc/hook"
+          cp -a src/hook/. "$ROOT$PREFIX/share/hook/"
 
-          # HOOK is a language/runtime, not a Python distribution.
-          cp -a src/hook/. "$ROOT$TERMUX_PREFIX/share/hook/"
-
-          cat > "$ROOT$TERMUX_PREFIX/bin/hook" <<'SH'
+          cat > "$ROOT$PREFIX/bin/hook" <<'SH'
           #!/data/data/com.termux/files/usr/bin/sh
           set -e
           PREFIX="${PREFIX:-/data/data/com.termux/files/usr}"
           export PYTHONPATH="$PREFIX/share/hook${PYTHONPATH:+:$PYTHONPATH}"
           exec python -m hook.cli "$@"
           SH
-          chmod 755 "$ROOT$TERMUX_PREFIX/bin/hook"
-
-          if [ -f LICENSE ]; then
-            cp LICENSE "$ROOT$TERMUX_PREFIX/share/doc/hook/LICENSE"
-          fi
+          chmod 755 "$ROOT$PREFIX/bin/hook"
+          [ ! -f LICENSE ] || cp LICENSE "$ROOT$PREFIX/share/doc/hook/LICENSE"
 
           cat > "$ROOT/DEBIAN/control" <<EOF
           Package: hook
@@ -86,34 +73,31 @@ jobs:
           EOF
 
           dpkg-deb --build --root-owner-group "$ROOT" "$PKG"
-          dpkg-deb --contents "$PKG"
-
+          dpkg-deb --contents "$PKG" | grep -F "./data/data/com.termux/files/usr/bin/hook"
+          dpkg-deb --contents "$PKG" | grep -F "./data/data/com.termux/files/usr/share/hook/"
           if dpkg-deb --contents "$PKG" | grep -Eq '[[:space:]]\./usr(/|$)'; then
-            echo "ERROR: package contains a host-root ./usr path" >&2
+            echo "ERROR: package contains host-root ./usr" >&2
             exit 1
           fi
 
-          dpkg-deb --contents "$PKG" | grep -F "./data/data/com.termux/files/usr/bin/hook"
-          dpkg-deb --contents "$PKG" | grep -F "./data/data/com.termux/files/usr/share/hook/"
-
-          mkdir -p repo/pool/main/h/hook \
-            repo/dists/stable/main/binary-all \
-            repo/dists/stable/main/binary-aarch64
+          mkdir -p repo/pool/main/h/hook repo/dists/stable/main/binary-all repo/dists/stable/main/binary-aarch64
           cp "$PKG" repo/pool/main/h/hook/
-
-          dpkg-scanpackages pool/main /dev/null > repo/dists/stable/main/binary-all/Packages
+          (
+            cd repo
+            dpkg-scanpackages pool/main /dev/null > dists/stable/main/binary-all/Packages
+          )
           gzip -9cn repo/dists/stable/main/binary-all/Packages > repo/dists/stable/main/binary-all/Packages.gz
           cp repo/dists/stable/main/binary-all/Packages repo/dists/stable/main/binary-aarch64/Packages
           cp repo/dists/stable/main/binary-all/Packages.gz repo/dists/stable/main/binary-aarch64/Packages.gz
 
-          ALL_SIZE=$(stat -c%s repo/dists/stable/main/binary-all/Packages)
-          ALL_GZ_SIZE=$(stat -c%s repo/dists/stable/main/binary-all/Packages.gz)
-          ALL_SHA=$(sha256sum repo/dists/stable/main/binary-all/Packages | cut -d' ' -f1)
-          ALL_GZ_SHA=$(sha256sum repo/dists/stable/main/binary-all/Packages.gz | cut -d' ' -f1)
-          ARM_SIZE=$(stat -c%s repo/dists/stable/main/binary-aarch64/Packages)
-          ARM_GZ_SIZE=$(stat -c%s repo/dists/stable/main/binary-aarch64/Packages.gz)
-          ARM_SHA=$(sha256sum repo/dists/stable/main/binary-aarch64/Packages | cut -d' ' -f1)
-          ARM_GZ_SHA=$(sha256sum repo/dists/stable/main/binary-aarch64/Packages.gz | cut -d' ' -f1)
+          for arch in all aarch64; do
+            dir="repo/dists/stable/main/binary-$arch"
+            sha="$(sha256sum "$dir/Packages" | cut -d' ' -f1)"
+            size="$(stat -c%s "$dir/Packages")"
+            gzsha="$(sha256sum "$dir/Packages.gz" | cut -d' ' -f1)"
+            gzsize="$(stat -c%s "$dir/Packages.gz")"
+            eval "SHA_${arch}=$sha SIZE_${arch}=$size GZSHA_${arch}=$gzsha GZSIZE_${arch}=$gzsize"
+          done
 
           cat > repo/dists/stable/Release <<EOF
           Origin: HOOK
@@ -125,38 +109,28 @@ jobs:
           Date: $(date -Ru)
           Description: HOOK Termux packages
           SHA256:
-           ${ALL_SHA} ${ALL_SIZE} main/binary-all/Packages
-           ${ALL_GZ_SHA} ${ALL_GZ_SIZE} main/binary-all/Packages.gz
-           ${ARM_SHA} ${ARM_SIZE} main/binary-aarch64/Packages
-           ${ARM_GZ_SHA} ${ARM_GZ_SIZE} main/binary-aarch64/Packages.gz
+           ${SHA_all} ${SIZE_all} main/binary-all/Packages
+           ${GZSHA_all} ${GZSIZE_all} main/binary-all/Packages.gz
+           ${SHA_aarch64} ${SIZE_aarch64} main/binary-aarch64/Packages
+           ${GZSHA_aarch64} ${GZSIZE_aarch64} main/binary-aarch64/Packages.gz
           EOF
 
           cat > repo/index.html <<EOF
-          <!doctype html>
-          <html><head><meta charset="utf-8"><title>HOOK Termux Repository</title></head>
-          <body>
-            <h1>HOOK Termux Repository</h1>
-            <p>Install HOOK with <code>pkg install hook</code> after adding this repository.</p>
-            <p>Latest version: <strong>${VERSION}</strong></p>
-          </body></html>
+          <!doctype html><html><head><meta charset="utf-8"><title>HOOK Termux Repository</title></head>
+          <body><h1>HOOK Termux Repository</h1><p>Install with <code>pkg install hook</code>.</p><p>Latest: <strong>${VERSION}</strong></p></body></html>
           EOF
 
-      - name: Verify APT repository
+      - name: Verify repository metadata
         shell: bash
         run: |
           set -euo pipefail
           DEB="repo/pool/main/h/hook/hook_${HOOK_VERSION}_all.deb"
-          for PACKAGES in \
-            repo/dists/stable/main/binary-all/Packages \
-            repo/dists/stable/main/binary-aarch64/Packages; do
-            test -s "$PACKAGES"
-            grep -F "Filename: pool/main/h/hook/hook_${HOOK_VERSION}_all.deb" "$PACKAGES"
-            if grep -Eq 'Filename: /|Filename: \./|repo/pool/' "$PACKAGES"; then
-              echo "ERROR: invalid APT Filename in $PACKAGES" >&2
-              exit 1
-            fi
-          done
           test -f "$DEB"
+          for p in repo/dists/stable/main/binary-all/Packages repo/dists/stable/main/binary-aarch64/Packages; do
+            test -s "$p"
+            grep -F "Filename: pool/main/h/hook/hook_${HOOK_VERSION}_all.deb" "$p"
+            ! grep -Eq 'Filename: /|Filename: \./|repo/pool/' "$p"
+          done
           grep -F "$(sha256sum repo/dists/stable/main/binary-all/Packages | cut -d' ' -f1)" repo/dists/stable/Release
           grep -F "$(sha256sum repo/dists/stable/main/binary-aarch64/Packages | cut -d' ' -f1)" repo/dists/stable/Release
 
