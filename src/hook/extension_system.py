@@ -5,7 +5,7 @@ Language, and Processor. Processor is the miscellaneous language-processing
 category.
 """
 from __future__ import annotations
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 import re
 
@@ -18,7 +18,7 @@ class ExtensionDefinition:
     value: Any = None
     bases: tuple[str, ...] = ()
     replaces: str | None = None
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] | None = None
 
 class ExtensionBase: category = "Processor"
 class Type(ExtensionBase): category = "Type"
@@ -31,25 +31,23 @@ class Processor(ExtensionBase): category = "Processor"
 class ExtensionConflict(Exception): pass
 
 class ExtensionRegistry:
-    """Runtime registry for all HOOK language extensions and dialects."""
+    """Registry for HOOK's seven extension categories and dialects."""
     def __init__(self):
-        self.items = {c: {} for c in CATEGORIES}
-        self.active = {c: {} for c in CATEGORIES}
-        self.dialects: dict[str, ExtensionDefinition] = {}
-        self.conflicts: dict[tuple[str, str], list[ExtensionDefinition]] = {}
-
-    def _category(self, category):
-        if category not in CATEGORIES: raise ValueError(f"unknown extension category: {category}")
-        return category
-    def register(self, name, category, value=None, bases=(), replaces=None, **metadata):
-        category=self._category(category); d=ExtensionDefinition(str(name),category,value,tuple(map(str,bases)),replaces,metadata)
-        old=self.items[category].get(d.name)
+        self.items={c:{} for c in CATEGORIES}; self.active={c:{} for c in CATEGORIES}
+        self.dialects={}; self.conflicts={}
+    def _category(self,c):
+        if c not in CATEGORIES: raise ValueError(f"unknown extension category: {c}")
+        return c
+    def register(self,name,category,value=None,bases=(),replaces=None,**metadata):
+        category=self._category(category); name=str(name)
+        d=ExtensionDefinition(name,category,value,tuple(map(str,bases)),replaces,metadata)
+        old=self.items[category].get(name)
         if old is not None and old.value is not value:
-            self.conflicts.setdefault((category,d.name),[old]).append(d); return d
-        self.items[category][d.name]=d; self.active[category][replaces or d.name]=d
-        if category=="Language": self.dialects[d.name]=d
+            self.conflicts.setdefault((category,name),[old]).append(d); return d
+        self.items[category][name]=d; self.active[category][replaces or name]=d
+        if category=="Language": self.dialects[name]=d
         return d
-    def register_class(self, cls, category=None):
+    def register_class(self,cls,category=None):
         category=category or getattr(cls,"extension_category",None)
         if category not in CATEGORIES:return None
         bases=tuple(getattr(b,"name",getattr(b,"__name__",str(b))) for b in getattr(cls,"bases",()))
@@ -103,10 +101,9 @@ def install_extension_system(engine_cls):
             self.root.values[name]=HookType(name); self.types[name]=self.root.values[name]
         for name in BUILTIN_PROCESSORS:self.extensions.register(name,"Processor",name)
         self.root.values["extensions"]=self.extensions
+        if hasattr(self,"standard_modules"):
+            self.standard_modules.values["extensions"]=self.extensions
     def exec_block(self,nodes,scope):
-        # The language extension system permits symbolic extension names such
-        # as class -+(Language, dialect_1):. The core class syntax still uses
-        # identifiers, so temporarily give symbolic classes an internal name.
         aliases={}; prepared=[]
         for n in nodes:
             m=re.match(r"^class\s+([^A-Za-z_\s][^\s]*)\s*\(",n.text)
@@ -123,7 +120,7 @@ def install_extension_system(engine_cls):
                 value=scope.values.pop(internal); value.name=original; scope.values[original]=value
         for name,value in list(scope.values.items()):
             if name in before or not hasattr(value,"bases"):continue
-            bases=getattr(value,"bases",()); base_names={getattr(b,"name",str(b)) for b in bases}
+            base_names={getattr(b,"name",str(b)) for b in getattr(value,"bases",())}
             category=next((c for c in CATEGORIES if c in base_names),None)
             if category:self.extensions.register(name,category,value,bases=tuple(base_names))
         return result
