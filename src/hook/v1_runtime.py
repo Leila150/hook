@@ -1,10 +1,4 @@
-"""HOOK 1.0 integration layer.
-
-This module turns the previously separate runtime subsystems into one public
-runtime surface.  It deliberately keeps the language syntax in ``engine.py``
-and provides adapters for HTTP, JSON, filesystem, concurrency, AI, games,
-native interop, tooling, and package loading.
-"""
+"""HOOK 1.0 integrated runtime surface."""
 from __future__ import annotations
 
 import asyncio
@@ -15,7 +9,6 @@ import random
 import re
 import time
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Any
 
 from .web_framework import Request, Response, Router, WebApp
@@ -35,7 +28,7 @@ LANGUAGE = "HOOK"
 
 
 class Module:
-    """Small attribute namespace used for built-in HOOK modules."""
+    """Attribute namespace used by built-in HOOK modules."""
     def __init__(self, name: str, **values: Any):
         self.__name__ = name
         self.__dict__.update(values)
@@ -45,7 +38,7 @@ class Module:
 
 
 class FeatureRegistry:
-    """Registry of capabilities available to a HOOK runtime."""
+    """Runtime capability registry."""
     def __init__(self):
         self._features: dict[str, Any] = {}
 
@@ -85,16 +78,14 @@ class OSModule(Module):
 
 class MathModule(Module):
     def __init__(self):
-        values = {k: getattr(math, k) for k in dir(math) if not k.startswith("_")}
-        super().__init__("math", **values)
+        super().__init__("math", **{k: getattr(math, k) for k in dir(math) if not k.startswith("_")})
 
 
 class RandomModule(Module):
     def __init__(self):
         super().__init__("random", random=random.random, randint=random.randint,
-                         choice=random.choice, choices=random.choices,
-                         shuffle=random.shuffle, sample=random.sample,
-                         uniform=random.uniform, seed=random.seed)
+                         choice=random.choice, choices=random.choices, shuffle=random.shuffle,
+                         sample=random.sample, uniform=random.uniform, seed=random.seed)
 
 
 class PathModule(Module):
@@ -113,48 +104,38 @@ class TimeModule(Module):
 
 class AsyncModule(Module):
     def __init__(self):
-        super().__init__("async", sleep=asyncio.sleep,
-                         gather=asyncio.gather, create_task=asyncio.create_task)
+        super().__init__("async", sleep=asyncio.sleep, gather=asyncio.gather,
+                         create_task=asyncio.create_task)
 
 
 def build_modules(engine) -> dict[str, Module]:
     app = WebApp()
-    router = Router()
     modules = {
-        "json": JSONModule(),
-        "os": OSModule(),
-        "math": MathModule(),
-        "random": RandomModule(),
-        "path": PathModule(),
-        "time": TimeModule(),
+        "json": JSONModule(), "os": OSModule(), "math": MathModule(),
+        "random": RandomModule(), "path": PathModule(), "time": TimeModule(),
         "async": AsyncModule(),
-        "web": Module("web", app=app, router=router, Request=Request,
+        "web": Module("web", app=app, router=app.router, Request=Request,
                        Response=Response, WebApp=WebApp, Router=Router),
-        "api": Module("api", app=app, router=router),
+        "api": Module("api", app=app, router=app.router),
         "concurrency": Module("concurrency", CancellationToken=CancellationToken,
-                               Channel=Channel, TaskGroup=TaskGroup,
-                               Scheduler=Scheduler, Mutex=Mutex, Atom=Atom),
-        "ai": Module("ai", Tensor=Tensor, tensor=tensor, softmax=softmax,
-                      argmax=argmax, relu=relu, sigmoid=sigmoid, linear=linear,
-                      Sequential=Sequential, ModelRegistry=ModelRegistry,
-                      Parameter=Parameter, Optimizer=Optimizer, SGD=SGD, Adam=Adam,
-                      mse=mse, binary_cross_entropy=binary_cross_entropy,
+                               Channel=Channel, TaskGroup=TaskGroup, Scheduler=Scheduler,
+                               Mutex=Mutex, Atom=Atom),
+        "ai": Module("ai", Tensor=Tensor, tensor=tensor, softmax=softmax, argmax=argmax,
+                      relu=relu, sigmoid=sigmoid, linear=linear, Sequential=Sequential,
+                      ModelRegistry=ModelRegistry, Parameter=Parameter, Optimizer=Optimizer,
+                      SGD=SGD, Adam=Adam, mse=mse, binary_cross_entropy=binary_cross_entropy,
                       Dataset=Dataset),
-        "game": Module("game", Color=Color, Vec2=Vec2, Entity=Entity,
-                        Scene=Scene, Game=Game, GUI=GUI, Audio=Audio),
+        "game": Module("game", Color=Color, Vec2=Vec2, Entity=Entity, Scene=Scene,
+                        Game=Game, GUI=GUI, Audio=Audio),
         "native": Module("native", NativeLibrary=NativeLibrary, CInterop=CInterop,
                           CppInterop=CppInterop, RustInterop=RustInterop, ABI=ABI,
-                          Ownership=Ownership, Binding=Binding,
-                          NativeBindings=NativeBindings),
-        "memory": Module("memory", Pointer=Pointer, MemoryManager=MemoryManager,
-                          Unsafe=Unsafe),
+                          Ownership=Ownership, Binding=Binding, NativeBindings=NativeBindings),
+        "memory": Module("memory", Pointer=Pointer, MemoryManager=MemoryManager, Unsafe=Unsafe),
         "tooling": Module("tooling", Formatter=Formatter, Linter=Linter,
-                           Diagnostic=Diagnostic, Profiler=Profiler,
-                           TestRunner=TestRunner),
+                           Diagnostic=Diagnostic, Profiler=Profiler, TestRunner=TestRunner),
         "packages": Module("packages", Package=Package, PackageManager=PackageManager),
         "dialects": Module("dialects", Dialect=Dialect, DialectEngine=DialectEngine,
-                            SyntaxExtension=SyntaxExtension,
-                            ExtensionPipeline=ExtensionPipeline),
+                            SyntaxExtension=SyntaxExtension, ExtensionPipeline=ExtensionPipeline),
     }
     return modules
 
@@ -164,17 +145,13 @@ def _safe_type(value):
 
 
 def _feature_snapshot(engine):
-    return {
-        "language": LANGUAGE,
-        "version": VERSION,
-        "filename": engine.filename,
-        "modules": sorted(getattr(engine, "modules", {})),
-        "types": sorted(getattr(engine, "types", {})),
-    }
+    return {"language": LANGUAGE, "version": VERSION, "filename": engine.filename,
+            "modules": sorted(getattr(engine, "modules", {})),
+            "types": sorted(getattr(engine, "types", {}))}
 
 
 def install_v1_runtime(engine_cls):
-    """Install the 1.0 integration layer exactly once."""
+    """Install the integrated 1.0 runtime exactly once."""
     if getattr(engine_cls, "_hook_v1_installed", False):
         return engine_cls
 
@@ -189,39 +166,59 @@ def install_v1_runtime(engine_cls):
             self.features.register(name, module)
         self.root.values.update(self.modules)
         self.root.values.update({
-            "HOOK_VERSION": VERSION,
-            "version": lambda: VERSION,
+            "HOOK_VERSION": VERSION, "version": lambda: VERSION,
             "features": lambda: self.features.names(),
             "feature": lambda name: self.features.get(name),
-            "typeof": _safe_type,
-            "isinstance": isinstance,
-            "enumerate": enumerate,
-            "zip": zip,
-            "sorted": sorted,
-            "reversed": reversed,
-            "any": any,
-            "all": all,
-            "open": open,
-            "Path": Path,
-            "env": os.environ,
-            "sleep": time.sleep,
-            "now": time.time,
+            "typeof": _safe_type, "isinstance": isinstance,
+            "enumerate": enumerate, "zip": zip, "sorted": sorted, "reversed": reversed,
+            "any": any, "all": all, "open": open, "Path": Path,
+            "env": os.environ, "sleep": time.sleep, "now": time.time,
             "snapshot": lambda: _feature_snapshot(self),
         })
 
     def exec_block(self, nodes, scope):
-        # Module imports are resolved before the legacy executor sees them.
         remaining = []
         for node in nodes:
             text = node.text.strip()
+
+            # Native HOOK API syntax: api GET "/path" do
+            route = re.fullmatch(r"api\s+(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\s+(\"(?:\\.|[^\"])*\"|'(?:\\.|[^'])*')\s+do", text, re.I)
+            if route:
+                method = route.group(1).upper()
+                path = bytes(route.group(2)[1:-1], "utf-8").decode("unicode_escape")
+                app = self.modules["api"].app
+                from .engine import Scope as HookScope, ReturnSignal
+
+                def handler(req, _node=node, _scope=scope, **params):
+                    local = HookScope(_scope, function=True)
+                    local.values["request"] = req
+                    local.values["req"] = req
+                    local.values.update(params)
+                    try:
+                        self.exec_block(_node.children or [], local)
+                    except ReturnSignal as result:
+                        return result.value
+                    return None
+
+                app.router.add(method, path, handler)
+                continue
+
+            # `serve` starts the currently registered web application.
+            serve = re.fullmatch(r"serve(?:\s+(\"[^\"]*\"|'[^']*'))?(?:\s+(\d+))?", text)
+            if serve:
+                host = serve.group(1)[1:-1] if serve.group(1) else "127.0.0.1"
+                port = int(serve.group(2)) if serve.group(2) else 8000
+                self.modules["web"].app.serve(host, port)
+                continue
+
+            # Built-in module imports are resolved without Python imports.
             m = re.fullmatch(r"(?:from\s+([A-Za-z_]\w*)\s+)?import\s+([A-Za-z_]\w*)", text)
             if m:
                 module_name, imported = m.group(1), m.group(2)
                 if module_name:
                     module = self.modules.get(module_name)
                     if module is None:
-                        remaining.append(node)
-                        continue
+                        remaining.append(node); continue
                     value = getattr(module, imported, None)
                     if value is None:
                         raise ImportError(f"cannot import '{imported}' from '{module_name}'")
@@ -242,6 +239,4 @@ def install_v1_runtime(engine_cls):
     return engine_cls
 
 
-__all__ = [
-    "VERSION", "LANGUAGE", "Module", "FeatureRegistry", "install_v1_runtime",
-]
+__all__ = ["VERSION", "LANGUAGE", "Module", "FeatureRegistry", "install_v1_runtime"]
