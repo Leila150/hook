@@ -2,14 +2,14 @@ name: Build and publish Termux repository
 
 on:
   push:
-    branches: ["main"]
-    tags: ["v*"]
+    branches:
+      - main
+    tags:
+      - 'v*'
   workflow_dispatch:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 concurrency:
   group: termux-repository
@@ -19,16 +19,18 @@ env:
   PAGES_BASE_URL: https://leila150.github.io/hook
 
 jobs:
-  package:
+  build:
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
     steps:
       - name: Check out source
         uses: actions/checkout@v6
 
       - name: Validate HOOK runtime
+        shell: bash
         run: |
           set -euo pipefail
           export PYTHONPATH="$PWD/src"
@@ -37,6 +39,7 @@ jobs:
           python3 -m compileall -q src/hook
 
       - name: Install packaging and signing tools
+        shell: bash
         run: |
           set -euo pipefail
           sudo apt-get update
@@ -62,15 +65,12 @@ jobs:
             exit 0
           fi
 
-          echo "Current source version:   $VERSION"
-          echo "Published repository:     $PUBLISHED_VERSION"
-
+          echo "Current source version: $VERSION"
+          echo "Published repository: $PUBLISHED_VERSION"
           if dpkg --compare-versions "$VERSION" le "$PUBLISHED_VERSION"; then
-            echo "ERROR: HOOK package version $VERSION must be greater than the currently published version $PUBLISHED_VERSION." >&2
-            echo "Bump VERSION in src/hook/cli.py before publishing." >&2
+            echo "ERROR: HOOK package version $VERSION must be greater than published version $PUBLISHED_VERSION." >&2
             exit 1
           fi
-
           echo "Version check passed: $VERSION > $PUBLISHED_VERSION"
 
       - name: Import APT signing key
@@ -93,9 +93,7 @@ jobs:
             echo "ERROR: Could not determine imported GPG key fingerprint." >&2
             exit 1
           fi
-
           echo "HOOK_APT_GPG_FINGERPRINT=$KEY_FINGERPRINT" >> "$GITHUB_ENV"
-          echo "Using APT signing key fingerprint: $KEY_FINGERPRINT"
 
       - name: Build Termux package and APT repository
         shell: bash
@@ -142,7 +140,7 @@ Version: ${VERSION}
 Section: devel
 Priority: optional
 Architecture: all
-Depends: python
+Depends: python:any
 Maintainer: Leila150
 Homepage: https://github.com/Leila150/hook
 Description: HOOK programming language
@@ -168,14 +166,14 @@ EOF
           cp repo/dists/stable/main/binary-all/Packages repo/dists/stable/main/binary-aarch64/Packages
           cp repo/dists/stable/main/binary-all/Packages.gz repo/dists/stable/main/binary-aarch64/Packages.gz
 
-          for arch in all aarch64; do
-            dir="repo/dists/stable/main/binary-$arch"
-            sha="$(sha256sum "$dir/Packages" | cut -d' ' -f1)"
-            size="$(stat -c%s "$dir/Packages")"
-            gzsha="$(sha256sum "$dir/Packages.gz" | cut -d' ' -f1)"
-            gzsize="$(stat -c%s "$dir/Packages.gz")"
-            eval "SHA_${arch}=$sha SIZE_${arch}=$size GZSHA_${arch}=$gzsha GZSIZE_${arch}=$gzsize"
-          done
+          SHA_ALL="$(sha256sum repo/dists/stable/main/binary-all/Packages | cut -d' ' -f1)"
+          SIZE_ALL="$(stat -c%s repo/dists/stable/main/binary-all/Packages)"
+          GZSHA_ALL="$(sha256sum repo/dists/stable/main/binary-all/Packages.gz | cut -d' ' -f1)"
+          GZSIZE_ALL="$(stat -c%s repo/dists/stable/main/binary-all/Packages.gz)"
+          SHA_AARCH64="$(sha256sum repo/dists/stable/main/binary-aarch64/Packages | cut -d' ' -f1)"
+          SIZE_AARCH64="$(stat -c%s repo/dists/stable/main/binary-aarch64/Packages)"
+          GZSHA_AARCH64="$(sha256sum repo/dists/stable/main/binary-aarch64/Packages.gz | cut -d' ' -f1)"
+          GZSIZE_AARCH64="$(stat -c%s repo/dists/stable/main/binary-aarch64/Packages.gz)"
 
           cat > repo/dists/stable/Release <<EOF
 Origin: HOOK
@@ -187,10 +185,10 @@ Components: main
 Date: $(date -Ru)
 Description: HOOK Termux packages
 SHA256:
- ${SHA_all} ${SIZE_all} main/binary-all/Packages
- ${GZSHA_all} ${GZSIZE_all} main/binary-all/Packages.gz
- ${SHA_aarch64} ${SIZE_aarch64} main/binary-aarch64/Packages
- ${GZSHA_aarch64} ${GZSIZE_aarch64} main/binary-aarch64/Packages.gz
+ ${SHA_ALL} ${SIZE_ALL} main/binary-all/Packages
+ ${GZSHA_ALL} ${GZSIZE_ALL} main/binary-all/Packages.gz
+ ${SHA_AARCH64} ${SIZE_AARCH64} main/binary-aarch64/Packages
+ ${GZSHA_AARCH64} ${GZSIZE_AARCH64} main/binary-aarch64/Packages.gz
 EOF
 
           gpg --batch --pinentry-mode loopback --passphrase-file "$PASSPHRASE_FILE" \
@@ -232,6 +230,9 @@ EOF
           test -s repo/dists/stable/Release.gpg
           test -s repo/hook-repo-key.asc
 
+          dpkg-deb --info "$DEB" | grep -F "Version: ${HOOK_VERSION}"
+          dpkg-deb --info "$DEB" | grep -F "Architecture: all"
+
           for p in repo/dists/stable/main/binary-all/Packages repo/dists/stable/main/binary-aarch64/Packages; do
             test -s "$p"
             grep -F "Package: hook" "$p"
@@ -243,6 +244,8 @@ EOF
 
           grep -F "$(sha256sum repo/dists/stable/main/binary-all/Packages | cut -d' ' -f1)" repo/dists/stable/Release
           grep -F "$(sha256sum repo/dists/stable/main/binary-aarch64/Packages | cut -d' ' -f1)" repo/dists/stable/Release
+          grep -F "$(sha256sum repo/dists/stable/main/binary-all/Packages.gz | cut -d' ' -f1)" repo/dists/stable/Release
+          grep -F "$(sha256sum repo/dists/stable/main/binary-aarch64/Packages.gz | cut -d' ' -f1)" repo/dists/stable/Release
 
           gpg --batch --verify repo/dists/stable/Release.gpg repo/dists/stable/Release
           gpg --batch --verify repo/dists/stable/InRelease
@@ -259,6 +262,16 @@ EOF
         with:
           path: ./repo
 
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
       - name: Deploy GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
