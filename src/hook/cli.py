@@ -13,7 +13,7 @@ from .compat import WinlatorRuntime, CompatibilityError, detect_components, host
 from .tooling import Formatter, Linter
 
 install_engine_extensions(Engine)
-VERSION = "1.1.1"
+VERSION = "1.1.2"
 
 
 def _run_file(path):
