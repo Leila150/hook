@@ -7,18 +7,26 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
+  pages: write
+  id-token: write
 
 concurrency:
   group: termux-repository
   cancel-in-progress: true
 
+env:
+  PAGES_BASE_URL: https://leila150.github.io/hook
+
 jobs:
   package:
     runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - name: Check out source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Validate HOOK runtime
         run: |
@@ -32,9 +40,9 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends dpkg-dev gnupg
+          sudo apt-get install -y --no-install-recommends dpkg-dev gnupg curl
 
-      - name: Check package version is newer than published version
+      - name: Check package version against published repository
         shell: bash
         run: |
           set -euo pipefail
@@ -43,9 +51,10 @@ jobs:
           echo "HOOK_VERSION=$VERSION" >> "$GITHUB_ENV"
 
           PUBLISHED_VERSION=""
-          if git ls-remote --exit-code --heads origin gh-pages >/dev/null 2>&1; then
-            git fetch --no-tags --depth=1 origin gh-pages:refs/remotes/origin/gh-pages
-            PUBLISHED_VERSION="$(git show origin/gh-pages:dists/stable/main/binary-all/Packages 2>/dev/null | awk '$1 == "Version:" {print $2; exit}')"
+          if curl --fail --silent --show-error --location --max-time 20 \
+              "$PAGES_BASE_URL/dists/stable/main/binary-all/Packages" \
+              -o "$RUNNER_TEMP/published-packages"; then
+            PUBLISHED_VERSION="$(awk '$1 == "Version:" {print $2; exit}' "$RUNNER_TEMP/published-packages")"
           fi
 
           if [ -z "$PUBLISHED_VERSION" ]; then
@@ -72,7 +81,6 @@ jobs:
           set -euo pipefail
           if [ -z "${HOOK_APT_GPG_PRIVATE_KEY:-}" ]; then
             echo "ERROR: GitHub secret HOOK_APT_GPG_PRIVATE_KEY is not configured." >&2
-            echo "Create a long-lived repository signing key and add its ASCII-armored private key as this secret." >&2
             exit 1
           fi
 
@@ -100,7 +108,6 @@ jobs:
 
           if [ -z "${HOOK_APT_GPG_PASSPHRASE:-}" ]; then
             echo "ERROR: GitHub secret HOOK_APT_GPG_PASSPHRASE is not configured." >&2
-            echo "Add the passphrase used to protect the HOOK APT signing key." >&2
             exit 1
           fi
 
@@ -197,26 +204,39 @@ EOF
           chmod 644 repo/hook-repo-key.asc
 
           cat > repo/index.html <<EOF
-          <!doctype html><html><head><meta charset="utf-8"><title>HOOK Termux Repository</title></head>
-          <body><h1>HOOK Termux Repository</h1><p>Install with <code>pkg install hook</code>.</p><p>Latest: <strong>${VERSION}</strong></p><p>APT signing key fingerprint: <code>${HOOK_APT_GPG_FINGERPRINT}</code></p></body></html>
-          EOF
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>HOOK Termux Repository</title></head>
+<body>
+<h1>HOOK Termux Repository</h1>
+<p>Install with <code>pkg install hook</code>.</p>
+<p>Latest: <strong>${VERSION}</strong></p>
+<p>APT signing key fingerprint: <code>${HOOK_APT_GPG_FINGERPRINT}</code></p>
+<p>Repository metadata: <a href="dists/stable/InRelease">InRelease</a> · <a href="dists/stable/Release">Release</a></p>
+</body>
+</html>
+EOF
           chmod 644 repo/index.html
 
-      - name: Verify repository metadata and signatures
+      - name: Verify repository metadata, package paths, and signatures
         shell: bash
         run: |
           set -euo pipefail
           export GNUPGHOME="$RUNNER_TEMP/hook-gnupg"
           DEB="repo/pool/main/h/hook/hook_${HOOK_VERSION}_all.deb"
+
           test -f "$DEB"
+          test -s repo/index.html
           test -s repo/dists/stable/Release
           test -s repo/dists/stable/InRelease
           test -s repo/dists/stable/Release.gpg
           test -s repo/hook-repo-key.asc
-          test -s repo/index.html
 
           for p in repo/dists/stable/main/binary-all/Packages repo/dists/stable/main/binary-aarch64/Packages; do
             test -s "$p"
+            grep -F "Package: hook" "$p"
+            grep -F "Version: ${HOOK_VERSION}" "$p"
+            grep -F "Architecture: all" "$p"
             grep -F "Filename: pool/main/h/hook/hook_${HOOK_VERSION}_all.deb" "$p"
             ! grep -Eq 'Filename: /|Filename: \./|repo/pool/' "$p"
           done
@@ -231,10 +251,14 @@ EOF
           test "$EXPORTED_FINGERPRINT" = "$HOOK_APT_GPG_FINGERPRINT"
           echo "APT repository signatures verified with $HOOK_APT_GPG_FINGERPRINT"
 
-      - name: Publish APT repository to GitHub Pages
-        uses: peaceiris/actions-gh-pages@v4
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload GitHub Pages artifact
+        uses: actions/upload-pages-artifact@v4
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_branch: gh-pages
-          publish_dir: ./repo
-          force_orphan: true
+          path: ./repo
+
+      - name: Deploy GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
