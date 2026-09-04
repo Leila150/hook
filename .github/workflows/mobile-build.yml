@@ -1,0 +1,81 @@
+name: HOOK Mobile Builds
+
+on:
+  workflow_dispatch:
+    inputs:
+      source:
+        description: HOOK source file to package
+        required: true
+        default: examples/hello.hk
+        type: string
+      build_android:
+        description: Build Android APK
+        required: false
+        default: true
+        type: boolean
+      build_ios:
+        description: Build iOS IPA (unsigned simulator/archive artifact)
+        required: false
+        default: true
+        type: boolean
+  push:
+    paths:
+      - '**.hk'
+      - 'src/hook/mobile_compiler.py'
+      - '.github/workflows/mobile-build.yml'
+
+jobs:
+  android:
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.build_android }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Install HOOK
+        run: python -m pip install -e .
+      - name: Generate Android project
+        env:
+          HOOK_SOURCE: ${{ inputs.source || 'examples/hello.hk' }}
+        run: |
+          python - <<'PY'
+          import os
+          from hook.mobile_compiler import AndroidCompiler
+          AndroidCompiler(package='hook.app', app_name='HOOK App').generate(os.environ['HOOK_SOURCE'], 'build/android')
+          PY
+      - name: Build APK
+        working-directory: build/android
+        run: gradle assembleRelease
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hook-android-apk
+          path: build/android/app/build/outputs/apk/**/*.apk
+
+  ios:
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.build_ios }}
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install HOOK
+        run: python -m pip install -e .
+      - name: Generate iOS source bundle
+        env:
+          HOOK_SOURCE: ${{ inputs.source || 'examples/hello.hk' }}
+        run: |
+          python - <<'PY'
+          import os
+          from hook.mobile_compiler import IOSCompiler
+          IOSCompiler(bundle_id='com.hook.app', app_name='HOOK App').generate(os.environ['HOOK_SOURCE'], 'build/ios')
+          PY
+      - name: Package iOS source artifact
+        run: ditto -c -k --sequesterRsrc --keepParent build/ios build/HOOK-iOS-source.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hook-ios-project
+          path: build/HOOK-iOS-source.zip
