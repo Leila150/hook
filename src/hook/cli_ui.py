@@ -5,6 +5,9 @@ import os
 import sys
 
 
+VERSION = "1.1.0"
+
+
 def supports_color() -> bool:
     return sys.stdout.isatty() and os.environ.get("NO_COLOR") is None
 
@@ -16,7 +19,7 @@ def color(text: str, code: str) -> str:
 
 
 def banner() -> None:
-    print(color("HOOK", "1;36") + color(" — programming language v0.1.0", "1"))
+    print(color("HOOK", "1;36") + color(f" — programming language v{VERSION}", "1"))
 
 
 def success(text: str) -> None:
