@@ -18,7 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Validate HOOK runtime
         run: |
@@ -104,9 +104,6 @@ jobs:
             exit 1
           fi
 
-          # GnuPG 2.x requires loopback pinentry for non-interactive passphrase use.
-          # Keep the passphrase in a short-lived, permission-restricted file rather
-          # than putting it on the gpg command line where it could appear in process data.
           PASSPHRASE_FILE="$RUNNER_TEMP/hook-apt-gpg-passphrase"
           umask 077
           printf '%s\n' "$HOOK_APT_GPG_PASSPHRASE" > "$PASSPHRASE_FILE"
@@ -119,30 +116,32 @@ jobs:
           rm -rf "$ROOT" repo "$PKG"
 
           mkdir -p "$ROOT/DEBIAN" "$ROOT$PREFIX/share/hook" "$ROOT$PREFIX/bin" "$ROOT$PREFIX/share/doc/hook"
+          chmod 755 "$ROOT/DEBIAN"
           cp -a src/hook/. "$ROOT$PREFIX/share/hook/"
 
           cat > "$ROOT$PREFIX/bin/hook" <<'SH'
-          #!/data/data/com.termux/files/usr/bin/sh
-          set -e
-          PREFIX="${PREFIX:-/data/data/com.termux/files/usr}"
-          export PYTHONPATH="$PREFIX/share/hook${PYTHONPATH:+:$PYTHONPATH}"
-          exec python -m hook.cli "$@"
-          SH
+#!/data/data/com.termux/files/usr/bin/sh
+set -e
+PREFIX="${PREFIX:-/data/data/com.termux/files/usr}"
+export PYTHONPATH="$PREFIX/share/hook${PYTHONPATH:+:$PYTHONPATH}"
+exec python -m hook.cli "$@"
+SH
           chmod 755 "$ROOT$PREFIX/bin/hook"
           [ ! -f LICENSE ] || cp LICENSE "$ROOT$PREFIX/share/doc/hook/LICENSE"
 
           cat > "$ROOT/DEBIAN/control" <<EOF
-          Package: hook
-          Version: ${VERSION}
-          Section: devel
-          Priority: optional
-          Architecture: all
-          Depends: python
-          Maintainer: Leila150
-          Homepage: https://github.com/Leila150/hook
-          Description: HOOK programming language
-           Easy, powerful, extensible and universal programming language.
-          EOF
+Package: hook
+Version: ${VERSION}
+Section: devel
+Priority: optional
+Architecture: all
+Depends: python
+Maintainer: Leila150
+Homepage: https://github.com/Leila150/hook
+Description: HOOK programming language
+ Easy, powerful, extensible and universal programming language.
+EOF
+          chmod 644 "$ROOT/DEBIAN/control"
 
           dpkg-deb --build --root-owner-group "$ROOT" "$PKG"
           dpkg-deb --contents "$PKG" | grep -F "./data/data/com.termux/files/usr/bin/hook"
@@ -172,23 +171,21 @@ jobs:
           done
 
           cat > repo/dists/stable/Release <<EOF
-          Origin: HOOK
-          Label: HOOK
-          Suite: stable
-          Codename: stable
-          Architectures: all aarch64
-          Components: main
-          Date: $(date -Ru)
-          Description: HOOK Termux packages
-          SHA256:
-           ${SHA_all} ${SIZE_all} main/binary-all/Packages
-           ${GZSHA_all} ${GZSIZE_all} main/binary-all/Packages.gz
-           ${SHA_aarch64} ${SIZE_aarch64} main/binary-aarch64/Packages
-           ${GZSHA_aarch64} ${GZSIZE_aarch64} main/binary-aarch64/Packages.gz
-          EOF
+Origin: HOOK
+Label: HOOK
+Suite: stable
+Codename: stable
+Architectures: all aarch64
+Components: main
+Date: $(date -Ru)
+Description: HOOK Termux packages
+SHA256:
+ ${SHA_all} ${SIZE_all} main/binary-all/Packages
+ ${GZSHA_all} ${GZSIZE_all} main/binary-all/Packages.gz
+ ${SHA_aarch64} ${SIZE_aarch64} main/binary-aarch64/Packages
+ ${GZSHA_aarch64} ${GZSIZE_aarch64} main/binary-aarch64/Packages.gz
+EOF
 
-          # APT supports both an inline signed InRelease and a detached Release.gpg.
-          # Keep both so older and newer APT clients can authenticate the archive.
           gpg --batch --pinentry-mode loopback --passphrase-file "$PASSPHRASE_FILE" \
             --local-user "$HOOK_APT_GPG_FINGERPRINT" --clearsign \
             --output repo/dists/stable/InRelease repo/dists/stable/Release
@@ -196,14 +193,23 @@ jobs:
             --local-user "$HOOK_APT_GPG_FINGERPRINT" --armor --detach-sign \
             --output repo/dists/stable/Release.gpg repo/dists/stable/Release
 
-          # Publish the public half of the repository signing key.
           gpg --batch --armor --export "$HOOK_APT_GPG_FINGERPRINT" > repo/hook-repo-key.asc
           chmod 644 repo/hook-repo-key.asc
 
           cat > repo/index.html <<EOF
-          <!doctype html><html><head><meta charset="utf-8"><title>HOOK Termux Repository</title></head>
-          <body><h1>HOOK Termux Repository</h1><p>Install with <code>pkg install hook</code>.</p><p>Latest: <strong>${VERSION}</strong></p><p>APT signing key fingerprint: <code>${HOOK_APT_GPG_FINGERPRINT}</code></p></body></html>
-          EOF
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>HOOK Termux Repository</title></head>
+<body>
+<h1>HOOK Termux Repository</h1>
+<p>Latest: <strong>${VERSION}</strong></p>
+<p>Install with <code>pkg install hook</code>.</p>
+<p>APT signing key fingerprint: <code>${HOOK_APT_GPG_FINGERPRINT}</code></p>
+<p><a href="hook-repo-key.asc">Repository signing key</a></p>
+</body>
+</html>
+EOF
+          chmod 644 repo/index.html
 
       - name: Verify repository metadata and signatures
         shell: bash
@@ -216,6 +222,7 @@ jobs:
           test -s repo/dists/stable/InRelease
           test -s repo/dists/stable/Release.gpg
           test -s repo/hook-repo-key.asc
+          test -s repo/index.html
 
           for p in repo/dists/stable/main/binary-all/Packages repo/dists/stable/main/binary-aarch64/Packages; do
             test -s "$p"
