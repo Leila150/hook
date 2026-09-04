@@ -4,9 +4,6 @@ Extension classes use small, discoverable conventions:
 - Statement/Loop: ``execute(...)`` or ``run(...)``
 - Operator: ``apply(left, right)``
 - Processor: ``process(text)`` returning replacement source text
-
-A handler can call ``__hook_execute_block__(nodes, scope)`` when it needs to
-execute a custom statement's indented body.
 """
 from __future__ import annotations
 import re
@@ -37,19 +34,18 @@ def install_extension_runtime(engine_cls):
 
     def expr(self, text, scope=None):
         s = text.strip()
-        # Word operators are intentionally dispatched before Python evaluation.
         for d in self.extensions.operators():
             name = re.escape(d.name)
             m = re.fullmatch(r"(.+?)\s+" + name + r"\s+(.+)", s)
             if m and d.name not in {"and", "or", "not", "nand", "nor", "xor", "xnor", "in", "is"}:
-                return self._eval_python(f"__hook_operator__({m.group(1)!r}, {m.group(2)}, {m.group(3)})", scope)
+                rewritten = f"__hook_operator__({m.group(1)!r}, {old_expr(self, m.group(1), scope)}, {old_expr(self, m.group(2), scope)})"
+                return old_expr(self, rewritten, scope)
         return old_expr(self, text, scope)
 
     def exec_block(self, nodes, scope):
         prepared = []
         for n in nodes:
             text = n.text.strip()
-            # Processors may transform source before the normal engine sees it.
             transformed = text
             for d in list(self.extensions.processors()):
                 if d.name in {"do", "then", "const"}: continue
@@ -73,8 +69,7 @@ def install_extension_runtime(engine_cls):
                 if handler is None:
                     raise RuntimeError(f"statement '{keyword}' has no execute/run method")
                 result = handler(text, n.children, self.root)
-                if result is not None:
-                    self.root.values["_result"] = result
+                if result is not None: self.root.values["_result"] = result
                 continue
 
             loop_def = self.extensions.resolve(keyword, "Loop")
@@ -84,8 +79,7 @@ def install_extension_runtime(engine_cls):
                 if handler is None:
                     raise RuntimeError(f"loop '{keyword}' has no execute/run method")
                 result = handler(text, n.children, self.root)
-                if result is not None:
-                    self.root.values["_result"] = result
+                if result is not None: self.root.values["_result"] = result
                 continue
             prepared.append(n)
         return old_exec(self, prepared, scope)
