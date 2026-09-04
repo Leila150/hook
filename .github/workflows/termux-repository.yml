@@ -15,6 +15,14 @@ jobs:
       - name: Check out source
         uses: actions/checkout@v4
 
+      - name: Validate HOOK runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m pip install --disable-pip-version-check --no-deps .
+          python3 -m hook.cli --version
+          python3 -m hook.cli -c 'print("Termux package smoke test")'
+
       - name: Build Termux .deb and APT repository
         shell: bash
         run: |
@@ -68,6 +76,11 @@ jobs:
           EOF
 
           dpkg-deb --build --root-owner-group "$ROOT" "$PKG"
+
+          # Verify the package really contains the executable and runtime.
+          dpkg-deb --contents "$PKG" | grep -F 'usr/bin/hook'
+          dpkg-deb --contents "$PKG" | grep -F 'usr/opt/hook/'
+          dpkg-deb --info "$PKG" | grep -F 'Package: hook'
 
           mkdir -p repo/pool/main/h/hook repo/dists/stable/main/binary-all
           cp "$PKG" repo/pool/main/h/hook/
