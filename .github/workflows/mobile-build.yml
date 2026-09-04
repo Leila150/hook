@@ -44,7 +44,6 @@ jobs:
           PYTHONPATH: ${{ github.workspace }}/src
         run: |
           set -euo pipefail
-          python -m hook.mobile_compiler >/dev/null 2>&1 || true
           python - <<'PY'
           import os
           from pathlib import Path
@@ -90,7 +89,7 @@ jobs:
           from hook.mobile_compiler import IOSCompiler
           source = os.environ['HOOK_SOURCE']
           project = IOSCompiler(bundle_id='com.hook.app', app_name='HOOK App').generate(source, 'build/ios')
-          required = [project / 'README.md', project / 'PROJECT_STATUS.txt', project / 'HOOKApp' / 'HOOKApp.swift', project / 'HOOKApp.xcodeproj' / 'project.pbxproj']
+          required = [project / 'README.md', project / 'PROJECT_STATUS.txt', project / 'HOOK_App' / 'HOOKApp.swift', project / 'HOOK_App.xcodeproj' / 'project.pbxproj']
           missing = [str(p) for p in required if not p.is_file()]
           if missing:
               raise SystemExit(f'Generated iOS project bundle is incomplete: {missing}')
