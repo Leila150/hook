@@ -1,0 +1,27 @@
+# HOOK v0.1 printable object conformance test
+print(Exception)
+print(Any)
+print(Type)
+print(unique)
+print(text)
+print(num)
+print(decimal)
+print(boolean)
+print(list)
+print(data)
+print(group)
+print(Object)
+print(Concept)
+print(Operator)
+print(Loop)
+print(SyntaxError)
+print(TypeError)
+print(RuntimeError)
+
+function hello() do
+    return "hello"
+
+print(hello)
+print([1, "two", 3.0])
+print((1, "two", 3.0))
+print({"name": "HOOK", "version": 0.1})
