@@ -1,21 +1,28 @@
 # HOOK 1.x Completion Status
 
-This document tracks implemented runtime work. A feature is marked implemented only when there is executable code or a regression test; metadata-only placeholders are not counted.
+This document tracks executable work. A feature is marked implemented only when concrete code and regression coverage exist; external toolchains are detected and used rather than simulated.
 
-## Completed in this pass
+## Implemented
 
-- Token-aware dialect keyword, statement and operator transformation that preserves strings and comments.
-- Dependency-free expression VM for arithmetic, comparisons, boolean logic, collections, indexing and registered calls.
-- Reverse-mode scalar automatic differentiation with `Value.backward()`.
-- Async task scheduler with spawn, gather and cancellation.
-- Async channel primitive.
-- Source diagnostics with positions, severities and error codes.
-- Module resolution for `.hk` modules, package `__init__.hk`, and built-in runtime modules.
-- Native target discovery and canonical target triples for Linux, Windows, macOS and Android ARM targets.
-- Versioned atomic serializer for persistent data values.
-- Unified `CompletePipeline` facade and public exports.
-- VM jump regression coverage and completion subsystem regression coverage.
+- Token-aware dialect transformations that preserve strings/comments.
+- Expression VM for arithmetic, comparisons, boolean logic, collections, indexing and registered calls.
+- Reverse-mode scalar automatic differentiation.
+- Neural-network primitives: linear, ReLU, softmax, model state, SGD and Adam.
+- Async task scheduler, gathering, cancellation and async channels.
+- Source diagnostics, source maps, profiler and debugger primitives.
+- `.hk` module and package-init resolution.
+- Native target discovery and canonical triples.
+- Real C compilation through an installed clang/gcc/cc compiler plus ctypes FFI.
+- Real Gradle Android project generation and conditional APK building when Gradle is installed.
+- Versioned atomic serialization.
+- SQLite database API and threaded TCP server.
+- Tkinter GUI primitives and a deterministic 2D game/entity loop with AABB collision.
+- Formatter and linter primitives.
+- Minimal stdio JSON-RPC LSP server.
+- Project manifest and local package installation helpers.
+- Unified completion/full-runtime public exports.
+- Regression tests covering the newly implemented services.
 
-## Backend boundary
+## External backend boundary
 
-Android APK generation, GPU execution, C/C++/Rust compilation, a full 3D renderer and a full LLM backend require substantial native/platform backends. HOOK exposes stable interfaces for these systems, but does not pretend a metadata class is a working compiler or renderer. Native builds should activate when the required host toolchain exists.
+HOOK can now invoke real native/platform toolchains where installed. It still does not bundle LLVM, Android SDK/build-tools, GPU drivers, Vulkan/OpenGL implementations, a C++ compiler, Rustc, or a production 3D/LLM backend. Those are platform toolchains rather than Python source files; the runtime reports missing prerequisites instead of silently pretending they exist.
