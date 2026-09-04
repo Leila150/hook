@@ -72,7 +72,6 @@ jobs:
           set -euo pipefail
           if [ -z "${HOOK_APT_GPG_PRIVATE_KEY:-}" ]; then
             echo "ERROR: GitHub secret HOOK_APT_GPG_PRIVATE_KEY is not configured." >&2
-            echo "Create a long-lived repository signing key and add its ASCII-armored private key as this secret." >&2
             exit 1
           fi
 
@@ -100,7 +99,6 @@ jobs:
 
           if [ -z "${HOOK_APT_GPG_PASSPHRASE:-}" ]; then
             echo "ERROR: GitHub secret HOOK_APT_GPG_PASSPHRASE is not configured." >&2
-            echo "Add the passphrase used to protect the HOOK APT signing key." >&2
             exit 1
           fi
 
@@ -241,9 +239,22 @@ EOF
           echo "APT repository signatures verified with $HOOK_APT_GPG_FINGERPRINT"
 
       - name: Publish APT repository to GitHub Pages
-        uses: peaceiris/actions-gh-pages@v4
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_branch: gh-pages
-          publish_dir: ./repo
-          force_orphan: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          PAGES_DIR="$RUNNER_TEMP/hook-pages"
+          rm -rf "$PAGES_DIR"
+          mkdir -p "$PAGES_DIR"
+          cp -a repo/. "$PAGES_DIR/"
+
+          cd "$PAGES_DIR"
+          git init
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add --all
+          git commit -m "Publish HOOK Termux repository ${HOOK_VERSION}"
+          git branch -M gh-pages
+          git remote add origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git push --force origin gh-pages
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
