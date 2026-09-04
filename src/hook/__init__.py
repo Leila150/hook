@@ -34,10 +34,11 @@ from .compat import Component, CompatibilityConfig, CompatibilityError, detect_c
 from .build_system import BuildTarget, NativeBuilder, find_android_sdk, find_android_ndk, AndroidProject
 from .project import HookProject
 from .universal import UniversalRuntime
+from .mobile_compiler import MobileBuildResult, MobileCompilerError, AndroidCompiler, IOSCompiler, compile_mobile
 from .full_runtime import (TensorValue, ParameterValue, LinearLayer, ReLULayer, SoftmaxLayer, NeuralModel, SGDOptimizer, AdamOptimizer, mse_loss, cross_entropy, NativeToolchain, find_native_compiler, compile_c, load_library, CFFI, AndroidProject as FullAndroidProject, GUIRuntime, GameEntity, GameRuntime, Database, TCPServer, format_hook, lint_hook, Debugger, LSPServer)
 from .completion import Position, Diagnostics, SourceAnalyzer, ExpressionVM, Value, TaskScheduler, AsyncChannel, ModuleSpec, ModuleResolver, NativeTarget, TargetResolver, Serializer, CompilationResult, CompletePipeline
 from .v1_runtime import VERSION, LANGUAGE, Module, FeatureRegistry, install_v1_runtime
 from .v1_fixes import install_v1_fixes
 install_engine_extensions(Engine); install_extension_system(Engine); install_universal_runtime(Engine); install_extension_runtime(Engine); install_v1_runtime(Engine); install_v1_fixes(Engine)
-__version__=VERSION
-__all__=[name for name in globals() if not name.startswith('_')]
+__version__ = VERSION
+__all__ = [name for name in globals() if not name.startswith('_')]
