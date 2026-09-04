@@ -6,6 +6,7 @@ from .cli_ui import banner, error, info
 from .engine import Engine
 from .runtime_extensions import install_engine_extensions
 from .errors import HookError
+from .compat import WinlatorRuntime, CompatibilityError, detect_components, host_arch, is_android
 
 install_engine_extensions(Engine)
 VERSION = "1.0.0"
@@ -29,6 +30,27 @@ def _run_file(path: pathlib.Path) -> int:
         return 1
     except Exception as exc:
         error(f"SystemError: {exc}")
+        return 1
+
+
+def _compat_status() -> int:
+    print(f"host: {host_arch()} | android: {'yes' if is_android() else 'no'}")
+    for name, component in detect_components().items():
+        state = "available" if component.available else "missing"
+        suffix = f" — {component.version}" if component.version else ""
+        print(f"{name}: {state}{suffix}")
+    return 0
+
+
+def _compat_run(executable: str, args: list[str]) -> int:
+    try:
+        return WinlatorRuntime().run(executable, args)
+    except CompatibilityError as exc:
+        error(str(exc))
+        info("Set HOOK_ROOTFS, HOOK_WINEPREFIX and component paths when using a custom Winlator-style environment.")
+        return 1
+    except Exception as exc:
+        error(f"CompatibilityError: {exc}")
         return 1
 
 
@@ -72,7 +94,7 @@ def build_parser():
         prog="hook",
         description="HOOK 1.0 — easy, powerful, extensible, universal.",
     )
-    p.add_argument("target", nargs="?", help="repl, run, or a .hk source file")
+    p.add_argument("target", nargs="?", help="repl, run, compat, or a .hk source file")
     p.add_argument("file", nargs="?", help=".hk source file when using run")
     p.add_argument("-c", "--code", metavar="CODE", help="execute HOOK source")
     p.add_argument("--version", action="version", version=f"HOOK {VERSION}")
@@ -94,6 +116,15 @@ def main(argv=None) -> int:
         except Exception as exc:
             error(f"SystemError: {exc}")
             return 1
+    if ns.target == "compat":
+        # Keep the syntax intentionally simple: `hook compat status` or
+        # `hook compat run program.exe [args...]`.
+        if not ns.file or ns.file == "status":
+            return _compat_status()
+        if ns.file == "run":
+            error("compat run requires an executable path")
+            return 2
+        return _compat_run(ns.file, [])
     if ns.target == "run":
         if not ns.file:
             error("run requires a .hk file")
