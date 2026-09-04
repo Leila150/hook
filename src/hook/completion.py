@@ -11,9 +11,7 @@ class Position:
 class Diagnostic:
     message:str; severity:str="error"; position:Position|None=None; code:str=""
     def format(self):
-        p=f"{self.position.line}:{self.position.column}: " if self.position else ""
-        c=f"[{self.code}] " if self.code else ""
-        return f"{self.severity}: {p}{c}{self.message}"
+        p=f"{self.position.line}:{self.position.column}: " if self.position else "";c=f"[{self.code}] " if self.code else "";return f"{self.severity}: {p}{c}{self.message}"
 class Diagnostics:
     def __init__(self):self.items=[]
     def error(self,message,line=0,column=0,code=""):self.items.append(Diagnostic(message,"error",Position(line,column),code))
@@ -22,20 +20,12 @@ class Diagnostics:
     def errors(self):return [x for x in self.items if x.severity=="error"]
     def raise_if_errors(self):
         if self.errors:raise SyntaxError("\n".join(x.format() for x in self.errors))
-
 class SourceAnalyzer:
     def parse_expression(self,expression):
         try:return ast.parse(expression,mode="eval")
         except SyntaxError as e:raise SyntaxError(f"invalid expression at {e.lineno}:{e.offset}: {e.msg}") from e
     def names(self,expression):return sorted({n.id for n in ast.walk(self.parse_expression(expression)) if isinstance(n,ast.Name)})
-    def complexity(self,source):
-        score=1 if source.strip() else 0
-        for line in source.splitlines():
-            s=line.strip()
-            score+=int(s.startswith(("if ","elif ","while ","for ")))+int(" and " in s or " or " in s)
-        return score
-
-_ALLOWED=(ast.Expression,ast.Constant,ast.Name,ast.Load,ast.BinOp,ast.UnaryOp,ast.BoolOp,ast.Compare,ast.Add,ast.Sub,ast.Mult,ast.Div,ast.FloorDiv,ast.Mod,ast.Pow,ast.BitAnd,ast.BitOr,ast.BitXor,ast.LShift,ast.RShift,ast.USub,ast.UAdd,ast.Not,ast.And,ast.Or,ast.Eq,ast.NotEq,ast.Lt,ast.LtE,ast.Gt,ast.GtE,ast.List,ast.Tuple,ast.Dict,ast.Subscript,ast.Slice)
+    def complexity(self,source):return 0 if not source.strip() else 1+sum(int(line.strip().startswith(("if ","elif ","while ","for ")))+int(" and " in line or " or " in line) for line in source.splitlines())
 class ExpressionVM:
     def __init__(self,functions=None):self.functions=functions or {}
     def run(self,source,env=None):return self._eval(ast.parse(source,mode="eval").body,dict(env or {}))
@@ -61,16 +51,13 @@ class ExpressionVM:
             return True
         if isinstance(n,ast.Call) and isinstance(n.func,ast.Name) and n.func.id in self.functions:return self.functions[n.func.id](*[self._eval(x,e) for x in n.args])
         raise ValueError(f"unsupported expression node: {type(n).__name__}")
-
 class Value:
     def __init__(self,data,_children=(),_op="",requires_grad=True):self.data=float(data);self.grad=0.;self._prev=set(_children);self._op=_op;self._backward=lambda:None;self.requires_grad=requires_grad
     def __add__(self,o):
-        o=o if isinstance(o,Value) else Value(o,requires_grad=False);out=Value(self.data+o.data,(self,o),"+")
-        out._backward=lambda:(setattr(self,"grad",self.grad+out.grad),setattr(o,"grad",o.grad+out.grad));return out
+        o=o if isinstance(o,Value) else Value(o,requires_grad=False);out=Value(self.data+o.data,(self,o),"+");out._backward=lambda:(setattr(self,"grad",self.grad+out.grad),setattr(o,"grad",o.grad+out.grad));return out
     __radd__=__add__
     def __mul__(self,o):
-        o=o if isinstance(o,Value) else Value(o,requires_grad=False);out=Value(self.data*o.data,(self,o),"*")
-        out._backward=lambda:(setattr(self,"grad",self.grad+o.data*out.grad),setattr(o,"grad",o.grad+self.data*out.grad));return out
+        o=o if isinstance(o,Value) else Value(o,requires_grad=False);out=Value(self.data*o.data,(self,o),"*");out._backward=lambda:(setattr(self,"grad",self.grad+o.data*out.grad),setattr(o,"grad",o.grad+self.data*out.grad));return out
     __rmul__=__mul__
     def __neg__(self):return self*-1
     def __sub__(self,o):return self+(-o)
@@ -84,7 +71,6 @@ class Value:
             seen.add(id(v));[visit(x) for x in v._prev];topo.append(v)
         visit(self);self.grad=1.
         for v in reversed(topo):v._backward()
-
 class TaskScheduler:
     def __init__(self):self.tasks=set();self.lock=threading.Lock()
     async def spawn(self,coro):
@@ -100,7 +86,6 @@ class AsyncChannel:
     def __init__(self,maxsize=0):self.queue=asyncio.Queue(maxsize)
     async def send(self,value):await self.queue.put(value)
     async def receive(self):return await self.queue.get()
-
 @dataclass
 class ModuleSpec:name:str;path:Path|None;kind:str="source"
 class ModuleResolver:
@@ -113,7 +98,6 @@ class ModuleResolver:
                 if p.is_file():return ModuleSpec(name,p)
         if name in {"json","os","math","random","time","path","async","web","api","ai","game","native","memory"}:return ModuleSpec(name,None,"builtin")
         raise ImportError(f"HOOK module '{name}' could not be resolved")
-
 TARGETS={"linux-x86_64":"x86_64-linux-gnu","linux-aarch64":"aarch64-linux-gnu","android-arm64":"aarch64-linux-android","windows-x86_64":"x86_64-pc-windows-msvc","macos-arm64":"aarch64-apple-darwin","macos-x86_64":"x86_64-apple-darwin"}
 @dataclass
 class NativeTarget:name:str;triple:str;pointer_bits:int=64
@@ -123,7 +107,6 @@ class TargetResolver:
     def resolve(self,name):
         if name not in TARGETS:raise ValueError(f"unsupported target '{name}'")
         return NativeTarget(name,TARGETS[name])
-
 class Serializer:
     VERSION=3
     @classmethod
@@ -142,9 +125,10 @@ class Serializer:
         obj=json.loads(p.read_text(encoding="utf-8"));
         if obj.get("version") not in (1,2,cls.VERSION):raise ValueError("unsupported .hkd version")
         return obj.get("data",default)
-
 @dataclass
-class CompilationResult:source:str;diagnostics:Diagnostics;target:NativeTarget|None=None
+class CompilationResult:
+    source:str;diagnostics:Diagnostics;target:NativeTarget|None=None
+    def ok(self):return not self.diagnostics.errors
 class CompletePipeline:
     def __init__(self,roots=()):self.modules=ModuleResolver(roots);self.targets=TargetResolver()
     def analyze(self,source):
@@ -154,5 +138,4 @@ class CompletePipeline:
         return d
     def compile(self,source,target=None):return CompilationResult(source,self.analyze(source),self.targets.resolve(target) if target else None)
     def run_expression(self,expression,env=None):return ExpressionVM().run(expression,env)
-
 __all__=["Position","Diagnostic","Diagnostics","SourceAnalyzer","ExpressionVM","Value","TaskScheduler","AsyncChannel","ModuleSpec","ModuleResolver","TARGETS","NativeTarget","TargetResolver","Serializer","CompilationResult","CompletePipeline"]
