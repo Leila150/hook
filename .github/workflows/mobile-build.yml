@@ -19,6 +19,7 @@ on:
         default: true
         type: boolean
   push:
+    branches: [main]
     paths:
       - '**.hk'
       - 'src/hook/**'
@@ -38,6 +39,19 @@ jobs:
           python-version: '3.12'
       - uses: android-actions/setup-android@v3
       - uses: gradle/actions/setup-gradle@v4
+      - name: Validate source input
+        env:
+          HOOK_SOURCE: ${{ inputs.source || 'examples/hello.hk' }}
+        run: |
+          set -euo pipefail
+          case "$HOOK_SOURCE" in
+            /*|../*|*/../*|*/.. ) echo "ERROR: source must stay inside the repository" >&2; exit 1 ;;
+          esac
+          test -f "$HOOK_SOURCE"
+          case "$HOOK_SOURCE" in
+            *.hk) ;;
+            *) echo "ERROR: source must be a .hk file" >&2; exit 1 ;;
+          esac
       - name: Generate Android project
         env:
           HOOK_SOURCE: ${{ inputs.source || 'examples/hello.hk' }}
@@ -49,7 +63,10 @@ jobs:
           from pathlib import Path
           from hook.mobile_compiler import AndroidCompiler
           source = os.environ['HOOK_SOURCE']
-          project = AndroidCompiler(package='hook.app', app_name='HOOK App').generate(source, 'build/android')
+          project = Path(AndroidCompiler(package='hook.app', app_name='HOOK App').generate(source, 'build/android')).resolve()
+          root = Path.cwd().resolve()
+          if root not in project.parents and project != root:
+              raise SystemExit(f'Generated project escaped workspace: {project}')
           required = [project / 'settings.gradle', project / 'build.gradle', project / 'app/build.gradle', project / 'app/src/main/AndroidManifest.xml']
           missing = [str(p) for p in required if not p.is_file()]
           if missing:
@@ -58,11 +75,14 @@ jobs:
           PY
       - name: Build APK
         working-directory: build/android
-        run: gradle --no-daemon assembleRelease
+        run: gradle --no-daemon --stacktrace assembleRelease
       - name: Verify APK artifact
         run: |
           set -euo pipefail
-          test -n "$(find build/android/app/build/outputs/apk -type f -name '*.apk' -print -quit)"
+          apk="$(find build/android/app/build/outputs/apk -type f -name '*.apk' -print -quit)"
+          test -n "$apk"
+          test -s "$apk"
+          echo "APK: $apk"
       - uses: actions/upload-artifact@v4
         with:
           name: hook-android-apk
@@ -77,6 +97,19 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
+      - name: Validate source input
+        env:
+          HOOK_SOURCE: ${{ inputs.source || 'examples/hello.hk' }}
+        run: |
+          set -euo pipefail
+          case "$HOOK_SOURCE" in
+            /*|../*|*/../*|*/.. ) echo "ERROR: source must stay inside the repository" >&2; exit 1 ;;
+          esac
+          test -f "$HOOK_SOURCE"
+          case "$HOOK_SOURCE" in
+            *.hk) ;;
+            *) echo "ERROR: source must be a .hk file" >&2; exit 1 ;;
+          esac
       - name: Generate iOS project bundle
         env:
           HOOK_SOURCE: ${{ inputs.source || 'examples/hello.hk' }}
@@ -88,13 +121,21 @@ jobs:
           from pathlib import Path
           from hook.mobile_compiler import IOSCompiler
           source = os.environ['HOOK_SOURCE']
-          project = IOSCompiler(bundle_id='com.hook.app', app_name='HOOK App').generate(source, 'build/ios')
+          project = Path(IOSCompiler(bundle_id='com.hook.app', app_name='HOOK App').generate(source, 'build/ios')).resolve()
+          root = Path.cwd().resolve()
+          if root not in project.parents and project != root:
+              raise SystemExit(f'Generated project escaped workspace: {project}')
           required = [project / 'README.md', project / 'PROJECT_STATUS.txt', project / 'HOOK_App' / 'HOOKApp.swift', project / 'HOOK_App.xcodeproj' / 'project.pbxproj']
           missing = [str(p) for p in required if not p.is_file()]
           if missing:
               raise SystemExit(f'Generated iOS project bundle is incomplete: {missing}')
           print(f'Generated iOS project bundle: {project}')
           PY
+      - name: Validate Xcode project
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          xcodebuild -project build/ios/HOOK_App.xcodeproj -list
       - name: Package iOS project artifact
         run: ditto -c -k --sequesterRsrc --keepParent build/ios build/HOOK-iOS-project.zip
       - uses: actions/upload-artifact@v4
