@@ -7,10 +7,12 @@ from .extension_system import (
     ExtensionDefinition, ExtensionRegistry, ExtensionConflict, CATEGORIES,
     install_extension_system,
 )
+from .universal_runtime import install_universal_runtime
 from .compiler import Compiler, VM, Program, Instruction
 
 install_engine_extensions(Engine)
 install_extension_system(Engine)
+install_universal_runtime(Engine)
 
 __version__="0.1.0"
 __all__=[
