@@ -1,0 +1,38 @@
+# HOOK extension conformance
+class Money(Type):
+    pass
+
+class Problem(Error):
+    pass
+
+class otherwise(Statement):
+    pass
+
+class repeat_more(Loop):
+    pass
+
+class contains(Operator):
+    pass
+
+class dialect_1(Language):
+    pass
+
+class dialect_2(Language, dialect_1):
+    pass
+
+class -+(Language, dialect_1):
+    pass
+
+class custom_processor(Processor):
+    pass
+
+print(Money)
+print(Problem)
+print(otherwise)
+print(repeat_more)
+print(contains)
+print(dialect_1)
+print(dialect_2)
+print(-+)
+print(custom_processor)
+print(extensions.snapshot())
