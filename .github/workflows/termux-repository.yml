@@ -18,7 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out source
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
 
       - name: Validate HOOK runtime
         run: |
@@ -72,6 +72,7 @@ jobs:
           set -euo pipefail
           if [ -z "${HOOK_APT_GPG_PRIVATE_KEY:-}" ]; then
             echo "ERROR: GitHub secret HOOK_APT_GPG_PRIVATE_KEY is not configured." >&2
+            echo "Create a long-lived repository signing key and add its ASCII-armored private key as this secret." >&2
             exit 1
           fi
 
@@ -99,6 +100,7 @@ jobs:
 
           if [ -z "${HOOK_APT_GPG_PASSPHRASE:-}" ]; then
             echo "ERROR: GitHub secret HOOK_APT_GPG_PASSPHRASE is not configured." >&2
+            echo "Add the passphrase used to protect the HOOK APT signing key." >&2
             exit 1
           fi
 
@@ -195,18 +197,9 @@ EOF
           chmod 644 repo/hook-repo-key.asc
 
           cat > repo/index.html <<EOF
-<!doctype html>
-<html lang="en">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>HOOK Termux Repository</title></head>
-<body>
-<h1>HOOK Termux Repository</h1>
-<p>Latest: <strong>${VERSION}</strong></p>
-<p>Install with <code>pkg install hook</code>.</p>
-<p>APT signing key fingerprint: <code>${HOOK_APT_GPG_FINGERPRINT}</code></p>
-<p><a href="hook-repo-key.asc">Repository signing key</a></p>
-</body>
-</html>
-EOF
+          <!doctype html><html><head><meta charset="utf-8"><title>HOOK Termux Repository</title></head>
+          <body><h1>HOOK Termux Repository</h1><p>Install with <code>pkg install hook</code>.</p><p>Latest: <strong>${VERSION}</strong></p><p>APT signing key fingerprint: <code>${HOOK_APT_GPG_FINGERPRINT}</code></p></body></html>
+          EOF
           chmod 644 repo/index.html
 
       - name: Verify repository metadata and signatures
@@ -239,22 +232,9 @@ EOF
           echo "APT repository signatures verified with $HOOK_APT_GPG_FINGERPRINT"
 
       - name: Publish APT repository to GitHub Pages
-        shell: bash
-        run: |
-          set -euo pipefail
-          PAGES_DIR="$RUNNER_TEMP/hook-pages"
-          rm -rf "$PAGES_DIR"
-          mkdir -p "$PAGES_DIR"
-          cp -a repo/. "$PAGES_DIR/"
-
-          cd "$PAGES_DIR"
-          git init
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add --all
-          git commit -m "Publish HOOK Termux repository ${HOOK_VERSION}"
-          git branch -M gh-pages
-          git remote add origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
-          git push --force origin gh-pages
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_branch: gh-pages
+          publish_dir: ./repo
+          force_orphan: true
