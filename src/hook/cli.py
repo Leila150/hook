@@ -73,14 +73,13 @@ def _run_repl():
 
 def main(argv=None):
     parser = argparse.ArgumentParser(prog="hook", description="HOOK programming language")
-    parser.add_argument("file", nargs="?", help="HOOK source file (.hk)")
+    parser.add_argument("target", nargs="?", help="HOOK command or source file (.hk)")
+    parser.add_argument("args", nargs=argparse.REMAINDER)
     parser.add_argument("-c", "--code", help="execute HOOK source directly")
     parser.add_argument("--version", action="store_true", help="show HOOK version")
-    parser.add_argument("command", nargs="?", choices=("run", "repl", "version", "check", "fmt", "new", "test", "build", "mobile", "compat"))
-    parser.add_argument("args", nargs=argparse.REMAINDER)
     ns = parser.parse_args(argv)
 
-    if ns.version or ns.command == "version":
+    if ns.version or ns.target == "version":
         print(f"HOOK {VERSION}")
         return 0
     if ns.code is not None:
@@ -91,39 +90,40 @@ def main(argv=None):
             error(str(exc)); return 1
         except Exception as exc:
             error(f"SystemError: {exc}"); return 1
-    if ns.command == "repl":
+
+    target = ns.target
+    args = ns.args
+    if target == "repl":
         return _run_repl()
-    if ns.command == "run":
-        if not ns.args:
+    if target == "run":
+        if not args:
             error("usage: hook run <file.hk>"); return 2
-        return _run_file(ns.args[0])
-    if ns.command == "check":
-        if not ns.args:
+        return _run_file(args[0])
+    if target == "check":
+        if not args:
             error("usage: hook check <file.hk>"); return 2
-        return _check_file(ns.args[0])
-    if ns.command == "fmt":
-        if not ns.args:
+        return _check_file(args[0])
+    if target == "fmt":
+        if not args:
             error("usage: hook fmt <file.hk> [--write]"); return 2
-        return _format_file(ns.args[0], "--write" in ns.args[1:])
-    if ns.command == "new":
-        return _new_project(ns.args[0] if ns.args else "hook-project")
-    if ns.command == "test":
-        return subprocess.call([sys.executable, "-m", "pytest"] + ns.args)
-    if ns.command == "build":
+        return _format_file(args[0], "--write" in args[1:])
+    if target == "new":
+        return _new_project(args[0] if args else "hook-project")
+    if target == "test":
+        return subprocess.call([sys.executable, "-m", "pytest"] + args)
+    if target == "build":
         from .toolchain import build_project
-        return build_project(ns.args[0] if ns.args else ".")
-    if ns.command == "mobile":
+        return build_project(args[0] if args else ".")
+    if target == "mobile":
         from .toolchain import mobile_build
-        if not ns.args:
+        if not args or args[0] != "build" or len(args) < 2:
             error("usage: hook mobile build <android|ios>"); return 2
-        if ns.args[0] != "build" or len(ns.args) < 2:
-            error("usage: hook mobile build <android|ios>"); return 2
-        return mobile_build(ns.args[1])
-    if ns.command == "compat":
+        return mobile_build(args[1])
+    if target == "compat":
         from .toolchain import compatibility_command
-        return compatibility_command(ns.args)
-    if ns.file:
-        return _run_file(ns.file)
+        return compatibility_command(args)
+    if target:
+        return _run_file(target)
 
     parser.print_help()
     return 0
