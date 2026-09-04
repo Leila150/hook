@@ -1,0 +1,19 @@
+print("Hello from HOOK v0.1!")
+
+local name = "Leila"
+local count = 3
+
+if count > 0 then
+    print(name, count)
+elif count == 0 then
+    print("zero")
+else
+    print("negative")
+
+function add(a: num, b: num) do
+    return a + b
+
+print(add(4, 5))
+
+for i in range(1, 4) do
+    print(i)
