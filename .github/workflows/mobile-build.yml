@@ -94,6 +94,16 @@ jobs:
           unzip -t "$apk" >/dev/null
           unzip -l "$apk" | grep -F 'AndroidManifest.xml' >/dev/null
           unzip -l "$apk" | grep -E 'classes[0-9]*\.dex' >/dev/null
+      - name: Launch APK in Android emulator
+        uses: ReactiveCircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_2
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: true
+          script: adb install -r "$(find build/android/app/build/outputs/apk -type f -name '*.apk' -print -quit)" && adb shell am start -n hook.app/.MainActivity && sleep 5 && adb shell dumpsys activity activities | grep -F 'hook.app/.MainActivity'
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: hook-android-apk
