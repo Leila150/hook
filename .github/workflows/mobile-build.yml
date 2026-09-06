@@ -14,7 +14,7 @@ on:
         default: true
         type: boolean
       build_ios:
-        description: Generate iOS project bundle
+        description: Build iOS project
         required: false
         default: true
         type: boolean
@@ -28,17 +28,21 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: hook-mobile-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   android:
     if: ${{ github.event_name != 'workflow_dispatch' || inputs.build_android }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
-          python-version: '3.12'
-      - uses: android-actions/setup-android@v3
-      - uses: gradle/actions/setup-gradle@v4
+          python-version: '3.14'
+      - uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3
+      - uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4
       - name: Validate source input
         env:
           HOOK_SOURCE: ${{ inputs.source || 'examples/hello.hk' }}
@@ -83,7 +87,14 @@ jobs:
           test -n "$apk"
           test -s "$apk"
           echo "APK: $apk"
-      - uses: actions/upload-artifact@v4
+      - name: Inspect APK contents
+        run: |
+          set -euo pipefail
+          apk="$(find build/android/app/build/outputs/apk -type f -name '*.apk' -print -quit)"
+          unzip -t "$apk" >/dev/null
+          unzip -l "$apk" | grep -F 'AndroidManifest.xml' >/dev/null
+          unzip -l "$apk" | grep -E 'classes[0-9]*\.dex' >/dev/null
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: hook-android-apk
           path: build/android/app/build/outputs/apk/**/*.apk
@@ -93,10 +104,10 @@ jobs:
     if: ${{ github.event_name != 'workflow_dispatch' || inputs.build_ios }}
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
-          python-version: '3.12'
+          python-version: '3.14'
       - name: Validate source input
         env:
           HOOK_SOURCE: ${{ inputs.source || 'examples/hello.hk' }}
@@ -131,14 +142,21 @@ jobs:
               raise SystemExit(f'Generated iOS project bundle is incomplete: {missing}')
           print(f'Generated iOS project bundle: {project}')
           PY
-      - name: Validate Xcode project
+      - name: Validate and compile Xcode project
         run: |
           set -euo pipefail
           xcodebuild -version
           xcodebuild -project build/ios/HOOK_App.xcodeproj -list
+          xcodebuild -project build/ios/HOOK_App.xcodeproj \
+            -scheme HOOK_App \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            build
       - name: Package iOS project artifact
         run: ditto -c -k --sequesterRsrc --keepParent build/ios build/HOOK-iOS-project.zip
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: hook-ios-project
           path: build/HOOK-iOS-project.zip
